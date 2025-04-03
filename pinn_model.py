@@ -115,13 +115,13 @@ def create_and_train_model():
         layers.InputLayer(input_shape=MODEL_INPUT_SHAPE),
         # 第一层：先BatchNormalization，然后Dense，再激活函数
         layers.BatchNormalization(),
-        layers.Dense(MODEL_FIRST_LAYER_UNITS, kernel_initializer='he_normal'),
+        layers.Dense(MODEL_FIRST_LAYER_UNITS, kernel_initializer='he_normal', use_bias=False),
         layers.BatchNormalization(),
         layers.Activation(MODEL_FIRST_ACTIVATION),
         layers.Dropout(MODEL_FIRST_DROPOUT),
         
         # 第二层：同样的模式
-        layers.Dense(MODEL_SECOND_LAYER_UNITS, kernel_initializer='he_normal'),
+        layers.Dense(MODEL_SECOND_LAYER_UNITS, kernel_initializer='he_normal', use_bias=False),
         layers.BatchNormalization(),
         layers.Activation(MODEL_SECOND_ACTIVATION),
         layers.Dropout(MODEL_SECOND_DROPOUT),
