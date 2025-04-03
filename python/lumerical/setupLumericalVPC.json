@@ -1,0 +1,389 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS CloudFormation script for setting up a Lumerical VPC with S3 endpoint and persistent ENI",
+
+    "Parameters": {
+        "EnvironmentName": {
+            "Description": "Name of the VPC",
+            "Type": "String"
+        },
+        "VpcCIDR": {
+            "Description": "Please enter the IP range (CIDR notation) for this VPC",
+            "Type": "String",
+            "Default": "10.192.0.0/16"
+        },
+        "PrivateSubnetCIDR": {
+            "Description": "Please enter the IP range (CIDR notation) for the private subnet",
+            "Type": "String",
+            "Default": "10.192.1.0/24"
+        },
+
+        "LicenseAmiId": {
+            "Description": "Location of the AMI (machine image) file for the license server",
+            "Type": "String",
+            "Default": ""
+        },
+
+        "Port22AccessCIDR": {
+            "Description": "IP address range (CIDR) that is allowed to access port 22 (SSH) in the VPC",
+            "Type": "String",
+            "Default": "0.0.0.0/0"
+        },
+
+        "KeyPairName": {
+            "Description": "An optional private key that was already created in AWS",
+            "Type": "String",
+            "Default": ""
+        },
+
+        "LicenseFile": {
+            "Description": "The content of the license file provided by Lumerical",
+            "Type": "String",
+            "Default": ""
+        },
+
+        "SetupComputeNodes": {
+            "Description": "Should we setup a head- and compute-node already?",
+            "Type": "String",
+            "Default": "false"
+        },
+
+        "LumericalAmiId": {
+            "Description": "Location of the AMI (machine image) file for the compute nodes",
+            "Type": "String",
+            "Default": ""
+        },
+
+        "ComputeNodeInstanceType": {
+            "Description": "Type of instance for the compute node (e.g. m5.2xlarge)",
+            "Type": "String",
+            "Default": "c5.large"
+        },
+
+        "ComputeNodeDiskSize": {
+            "Description": "Size of the storage of each compute node in GB",
+            "Type": "Number",
+            "Default": "60"
+        },
+
+        "ComputeNodeGroupMaxSize": {
+            "Description": "Max. number of compute instances supported",
+            "Type": "Number",
+            "Default": "64"
+        },
+
+        "ComputeGroupCapacity": {
+            "Description": "Number of compute node instances desired",
+            "Type": "Number",
+            "Default": "0"
+        },
+
+        "ResetTag": {
+            "Description": "A tag used to reset everything except the network interface (since we want to preserve the MAC address).",
+            "Type": "String",
+            "Default": "false"
+        }
+
+    },
+
+    "Conditions": {
+        "NotReset" : {"Fn::Equals" : [{"Ref" : "ResetTag"}, "false"]},
+        "HasLicenseFile" : {"Fn::And" : [{"Fn::Not" : [{"Fn::Equals" : [{"Ref" : "LicenseFile"}, ""]} ]},{"Condition":"NotReset"}]},
+        "LaunchComputeNodes" : {"Fn::And" : [{"Fn::Equals" : [{"Ref" : "SetupComputeNodes"}, "true"]},{"Condition":"NotReset"}]},
+        "HasKeyName": {"Fn::Not": [{"Fn::Equals": ["", {"Ref": "KeyPairName"}]}]}
+    },
+
+    "Resources": {
+        "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "CidrBlock": { "Ref": "VpcCIDR" },
+                "EnableDnsSupport" : true,
+                "EnableDnsHostnames" : true,
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": { "Ref": "EnvironmentName" }
+                    }
+                ]
+            }
+        },
+
+        "VPCGatewayS3": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Condition" : "NotReset",
+            "Properties": {
+                "ServiceName": {
+                    "Fn::Sub": "com.amazonaws.${AWS::Region}.s3"
+                },
+                "VpcId": {
+                    "Ref": "VPC"
+                }
+            }
+        },
+
+        "InternetGateway": {
+            "Type": "AWS::EC2::InternetGateway",
+            "Condition" : "NotReset",
+            "Properties": {}
+        },
+
+        "VPCGatewayAttachment": {
+            "Type": "AWS::EC2::VPCGatewayAttachment",
+            "Condition" : "NotReset",
+            "Properties": {
+                "InternetGatewayId": { "Ref": "InternetGateway" },
+                "VpcId": { "Ref": "VPC" }
+            }
+        },
+
+        "Subnet1": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": { "Ref": "VPC" },
+                "CidrBlock": { "Ref": "PrivateSubnetCIDR" },
+                "MapPublicIpOnLaunch": true,
+                "Tags": [ { "Key": "Name", "Value": {"Fn::Sub": "${EnvironmentName}-Subnet"} }]
+            }
+        },
+
+        "SecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "SSH traffic in, HTTPS traffic internal, all traffic out.",
+                "VpcId": { "Ref": "VPC" },
+                "SecurityGroupIngress": [ { "IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : {"Ref": "Port22AccessCIDR" }},
+                                          { "IpProtocol" : "tcp", "FromPort" : "0", "ToPort" : "65535", "CidrIp" : {"Ref": "PrivateSubnetCIDR" }},
+                                          { "IpProtocol" : "icmp", "FromPort" : "8", "ToPort" : "-1", "CidrIp" : {"Ref": "PrivateSubnetCIDR" }}
+                ]
+            }
+        },
+
+        "NetworkInterface1": {
+            "Type": "AWS::EC2::NetworkInterface",
+            "Properties": {
+                "SubnetId": { "Ref": "Subnet1" },
+                "Description" : "Persistent ENI with fixed MAC address. Deleting this invalidates the node-locked license",
+                "GroupSet": [{"Ref": "SecurityGroup"}],
+                "Tags": [{ "Key": "Name", "Value": { "Fn::Sub": "${EnvironmentName}-ENI" } } ]
+            }
+        },
+
+        "PublicRouteTable" : {
+          "Type" : "AWS::EC2::RouteTable",
+          "Condition" : "NotReset",
+          "Properties" : {
+            "VpcId" : { "Ref" : "VPC" },
+            "Tags": [{ "Key": "Name", "Value": { "Fn::Sub": "${EnvironmentName}-RouteTable" } }]
+          }
+        },
+
+        "GatewayRoute" : {
+         "Type" : "AWS::EC2::Route",
+         "Condition" : "NotReset",
+         "DependsOn" : ["InternetGateway","VPCGatewayAttachment"],
+         "Properties" : {
+            "RouteTableId" : { "Ref" : "PublicRouteTable" },
+            "DestinationCidrBlock" : "0.0.0.0/0",
+            "GatewayId" : { "Ref" : "InternetGateway" }
+           }
+        },
+
+        "SubnetRouteTableAssociation" : {
+          "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+          "Condition" : "NotReset",
+          "Properties" : {
+            "RouteTableId" : { "Ref" : "PublicRouteTable" },
+            "SubnetId" : { "Ref" : "Subnet1" }
+           }
+        },
+
+        "LicenseServerRoleProfile": {
+          "Type": "AWS::IAM::InstanceProfile",
+          "Condition" : "NotReset",
+          "Properties" : {
+            "Path" : "/",
+            "Roles" : [ "SSM_Role" ]
+          }
+        },
+          "ComputeNodeRoleProfile": {
+          "Type": "AWS::IAM::InstanceProfile",
+          "Condition" : "NotReset",
+          "Properties" : {
+            "Path" : "/",
+            "Roles" : [ "SSM_Role" ]
+          }
+        },
+
+        "LicenseServer": {
+           "Type" : "AWS::EC2::Instance",
+           "Condition" : "HasLicenseFile",
+           "Metadata" : {
+             "AWS::CloudFormation::Init" : {
+               "config" : {
+                 "files" : {
+                     "/opt/lumerical/lumerical-flexlm/licenses/LUMERICL/AWSLicenseFile.lic.gz"  : {
+                     "content" : { "Ref" : "LicenseFile" },
+                     "encoding" : "base64",
+                     "mode"  : "000644",
+                     "owner" : "lumlmadmin",
+                     "group" : "root"
+                   }
+                 }
+               }
+             }
+           },
+           "Properties" : {
+              "ImageId" : { "Ref" : "LicenseAmiId" },
+              "IamInstanceProfile" : {"Ref" : "LicenseServerRoleProfile"},
+              "InstanceType" : "t2.micro",
+              "KeyName": {"Fn::If": ["HasKeyName", {"Ref": "KeyPairName"}, {"Ref": "AWS::NoValue"}]},
+              "NetworkInterfaces": [{ "DeviceIndex": "0",
+                                      "NetworkInterfaceId" : {"Ref" : "NetworkInterface1"},
+                                      "DeleteOnTermination": false }],
+              "Tags": [{"Key" : "Name", "Value" : { "Fn::Sub": "${EnvironmentName}-LicenseServer" }}],
+              "UserData" : { "Fn::Base64" : { "Fn::Join" : [ "", [
+                  "#!/bin/bash -vx\n",
+
+                  "#Set a unique internal hostname\n",
+                  { "Fn::Sub" : "hostnamectl set-hostname --static licenseserver.${EnvironmentName}.internal\n"},
+
+                  "# Run cfn-init\n",
+                  "/opt/aws/bin/cfn-init -v ",
+                  "         --stack ", { "Ref": "AWS::StackName" },
+                  "         --resource LicenseServer ",
+                  "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+                  "# Signal success\n",
+                  "/opt/aws/bin/cfn-signal -e $? ",
+                  "         --stack ", { "Ref" : "AWS::StackName" },
+                  "         --resource LicenseServer ",
+                  "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+                  "# Unzip the license file\n",
+                  "pushd .; /opt/lumerical/lumerical-flexlm/licenses/LUMERICL/AWSLicenseFile.lic.gz\n",
+                  "cd /opt/lumerical/lumerical-flexlm/licenses/LUMERICL/\n",
+                  "gunzip AWSLicenseFile.lic.gz\n",
+                  "chown lumlmadmin:lumlmadmin AWSLicenseFile.lic\n",
+                  "popd\n",
+
+                  "#systemctl restart lumlmgrd\n",
+                  "touch  /tmp/lumerical_user_script_was_run", "\n"
+              ]]}}
+           },
+           "DependsOn": "VPCGatewayAttachment"
+        },
+
+        "ComputeNodeRole": {
+          "Type": "AWS::IAM::Role",
+          "Condition" : "NotReset",
+          "Properties" : {
+            "AssumeRolePolicyDocument" : {
+              "Version" : "2012-10-17",
+              "Statement" : [{
+                "Effect" : "Allow",
+                "Principal" : { "Service" : ["ec2.amazonaws.com"] },
+                "Action" : [ "sts:AssumeRole" ]
+              }]
+            },
+            "Path": "/",
+            "Policies": [{
+              "PolicyName": "root",
+              "PolicyDocument": {
+                  "Version" : "2012-10-17",
+                  "Statement": [{ "Effect": "Allow", "Action": "*", "Resource": "*" }]
+              }
+            }]
+          }
+    },
+
+    "ComputeNodeInstanceProfil": {
+          "Type": "AWS::IAM::InstanceProfile",
+          "Condition" : "NotReset",
+          "Properties" : {
+            "Path" : "/",
+            "Roles" : [ {"Ref":"ComputeNodeRole" }]
+          }
+        },
+
+        "ComputeNodeConfig": {
+           "Type" : "AWS::AutoScaling::LaunchConfiguration",
+           "Condition" : "LaunchComputeNodes",
+           "Properties" : {
+              "ImageId" : { "Ref" : "LumericalAmiId" },
+              "IamInstanceProfile" : {"Ref" : "ComputeNodeRoleProfile"},
+              "InstanceType" : { "Ref" : "ComputeNodeInstanceType" },
+              "KeyName": {"Fn::If": ["HasKeyName", {"Ref": "KeyPairName"}, {"Ref": "AWS::NoValue"}]},
+        "SecurityGroups" : [{"Ref" : "SecurityGroup"}],
+        "IamInstanceProfile" : {"Ref":"ComputeNodeInstanceProfil"},
+              "BlockDeviceMappings" : [{
+                 "DeviceName" : "/dev/sda1",
+                 "Ebs" : { "VolumeSize" : {"Ref":"ComputeNodeDiskSize"}, "VolumeType" : "gp2" }
+                }],
+          "UserData" : { "Fn::Base64" : { "Fn::Join" : [ "", [
+                 "#!/bin/bash -vx\n",
+
+                 "#Set a unique internal hostname\n",
+                 "hostnamectl set-hostname --static licenseserver.${EnvironmentName}.internal\n",
+                 "echo `hostname` > /tmp/lumerical_userdata.log\n",
+
+                 "# Run cfn-init\n",
+                 "/opt/aws/bin/cfn-init -v ",
+                 "         --stack ", { "Ref": "AWS::StackName" },
+                 "         --resource LicenseServer ",
+                 "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+                 "# Signal success\n",
+                 "/opt/aws/bin/cfn-signal -e $? ",
+                 "         --stack ", { "Ref" : "AWS::StackName" },
+                 "         --resource LicenseServer ",
+                 "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+                 "echo export LM_LICENSE_FILE=27000@", {"Fn::GetAtt" : [ "LicenseServer","PrivateIp"]}, " >> /etc/profile\n",
+                 "echo export AWS_DEFAULT_REGION=",{ "Ref" : "AWS::Region" },"\n",
+                 "echo export DISPLAY=:0 >> /etc/profile\n",
+
+                 "pip install boto3"
+              ]]}}
+        },
+           "DependsOn": "VPCGatewayAttachment"
+        },
+
+        "ComputeNodeGroup" : {
+           "Type" : "AWS::AutoScaling::AutoScalingGroup",
+           "Condition" : "LaunchComputeNodes",
+           "Properties" : {
+              "LaunchConfigurationName":{"Ref" : "ComputeNodeConfig"},
+              "MinSize" : "0",
+              "MaxSize" : {"Ref" : "ComputeNodeGroupMaxSize"},
+              "DesiredCapacity" : {"Ref" : "ComputeGroupCapacity"},
+              "VPCZoneIdentifier": [ { "Ref": "Subnet1" } ],
+			        "TerminationPolicies":["NewestInstance"],
+              "Tags": [{"Key" : "Name", "Value" : { "Fn::Sub": "${EnvironmentName}-Node" }, "PropagateAtLaunch" : "true" }]
+           }
+        }
+    },
+
+    "Outputs": {
+        "VPCID": {
+            "Description": "A reference to the created VPC",
+            "Value": { "Ref": "VPC" }
+        },
+        "AccountNo": {
+            "Description": "The AWS Account number",
+            "Value": { "Ref": "AWS::AccountId" }
+        },
+        "Zone": {
+            "Description": "The zone",
+            "Value": { "Ref": "AWS::Region" }
+        },
+        "SubnetId": {
+            "Description": "Id of the private subnet",
+            "Value": { "Ref": "Subnet1" }
+        },
+        "SecurityGroupId": {
+            "Description": "Id of the security group",
+            "Value": {"Fn::If": ["NotReset", {"Ref": "SecurityGroup"}, "None"]}
+        }
+    }
+}

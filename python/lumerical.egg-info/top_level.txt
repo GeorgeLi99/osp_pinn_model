@@ -1,0 +1,6 @@
+add_partitions
+lumapi
+lumerical
+lumjson
+lumopt
+lumslurm

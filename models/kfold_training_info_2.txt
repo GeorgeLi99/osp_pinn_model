@@ -1,0 +1,21 @@
+Model: PINN (Physics-Informed Neural Network) with K-fold Cross Validation
+K value (number of folds): 5
+Total training time: 0hr 2min 50.49sec
+Average training time per fold: 34.10sec
+Total number of epochs: 5000
+Average validation loss: 0.063180 ¡À 0.004598
+Best validation loss: 0.054375 (fold 3)
+Physical constraint weight: 0.3
+Training batch size: 512
+Optimizer: Adam
+Learning rate: 9.999999747378752e-05
+Hardware: GPU - /physical_device:GPU:0
+Mixed precision training: yes
+Timestamp: 2025-03-31 22:15:18
+
+Detailed results for each fold:
+Fold 1 - Validation loss: 0.063271, Training time: 34.60sec
+Fold 2 - Validation loss: 0.064711, Training time: 34.91sec
+Fold 3 - Validation loss: 0.054375, Training time: 33.27sec
+Fold 4 - Validation loss: 0.066704, Training time: 33.65sec
+Fold 5 - Validation loss: 0.066841, Training time: 34.06sec
