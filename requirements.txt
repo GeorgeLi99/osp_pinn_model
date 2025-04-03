@@ -4,6 +4,9 @@
 tensorflow>=2.12.0
 keras>=3.5.0
 
+# TensorBoard可视化
+tensorboard>=2.12.0
+
 # 数据处理库
 numpy>=1.22.0
 pandas>=1.5.0
@@ -16,7 +19,7 @@ pydot>=1.4.2        # 用于keras.utils.plot_model生成模型架构图
 graphviz>=0.19      # 用于keras.utils.plot_model生成模型架构图
 
 # 模型持久化
-h5py>=3.7.0         # 用于支持Keras模型保存为.keras格式
+h5py>=3.7.0         # 用于支持Keras模型保存为.h5/.keras格式
 
 # 辅助工具
 joblib>=1.1.0       # 用于数据并行处理和模型保存
@@ -27,6 +30,12 @@ python-dateutil>=2.8.0   # 日期时间处理
 pytz>=2022.1            # 时区处理（pandas依赖）
 six>=1.16.0             # 兼容性工具
 packaging>=21.0         # 版本解析和比较
+
+# GPU支持（可选，如有NVIDIA GPU）
+nvidia-cudnn-cu11>=8.6.0.163  # CUDA深度神经网络库，仅适用于NVIDIA GPU
+
+# 测试与验证工具（可选）
+pytest>=7.0.0            # 用于单元测试
 
 # 开发工具（可选）
 ipython>=8.0.0          # 交互式Python环境
