@@ -80,6 +80,85 @@ class FeatureMaskingLayer(tf.keras.layers.Layer):
         config.update({'feature_indices_to_mask': self.feature_indices_to_mask})
         return config
 
+# 用于调试和验证的层
+@keras.utils.register_keras_serializable(package="PINN")
+class DebugLayer(tf.keras.layers.Layer):
+    """用于调试和验证的层，打印输入数据并原样返回"""
+    
+    def __init__(self, layer_name="debug", **kwargs):
+        super(DebugLayer, self).__init__(**kwargs)
+        self.layer_name = layer_name
+        
+    def call(self, inputs, training=None):
+        if training:
+            # 仅在第一次训练迭代时打印，避免过多输出
+            tf.print(f"\n[{self.layer_name}] 输入形状:", tf.shape(inputs))
+            # 打印批次中第一个样本的前6个特征值
+            tf.print(f"[{self.layer_name}] 第一个样本特征:", inputs[0, :6])
+        return inputs
+    
+    def get_config(self):
+        config = super(DebugLayer, self).get_config()
+        config.update({'layer_name': self.layer_name})
+        return config
+
+# 功能函数：验证特征屏蔽是否正常工作
+def verify_feature_masking(model, sample_data):
+    """
+    验证特征屏蔽层是否正常工作
+    
+    参数:
+        model: 包含FeatureMaskingLayer的模型
+        sample_data: 用于验证的样本数据
+    """
+    print("\n=== 验证特征屏蔽 ===")
+    
+    # 创建一个截断模型，仅包含到FeatureMaskingLayer的层
+    masking_layer_index = None
+    for i, layer in enumerate(model.layers):
+        if isinstance(layer, FeatureMaskingLayer):
+            masking_layer_index = i
+            break
+    
+    if masking_layer_index is None:
+        print("未找到FeatureMaskingLayer，无法验证")
+        return
+    
+    # 创建截断模型
+    truncated_model = tf.keras.models.Sequential(model.layers[:masking_layer_index+1])
+    
+    # 获取原始输入
+    if isinstance(sample_data, tuple):
+        input_data = sample_data[0]  # 如果sample_data是(x, y)元组
+    else:
+        input_data = sample_data
+    
+    # 仅使用少量样本
+    if len(input_data) > 5:
+        input_data = input_data[:5]
+    
+    # 原始数据
+    print("原始输入数据（前5个样本的前6个特征）:")
+    for i in range(len(input_data)):
+        print(f"  样本 {i+1}: {input_data[i, :6]}")
+    
+    # 应用掩码后的数据
+    masked_output = truncated_model.predict(input_data)
+    print("\n掩码应用后的数据（前5个样本的前6个特征）:")
+    for i in range(len(masked_output)):
+        print(f"  样本 {i+1}: {masked_output[i, :6]}")
+    
+    # 检查前三个特征是否为0
+    zeros_check = np.all(masked_output[:, :3] == 0)
+    print(f"\n前三个特征是否全为0: {'是' if zeros_check else '否'}")
+    # 检查其他特征是否保持不变
+    if zeros_check:
+        unchanged_check = np.allclose(masked_output[:, 3:], input_data[:, 3:])
+        print(f"其他特征是否保持不变: {'是' if unchanged_check else '否'}")
+        
+    print("=== 验证完成 ===\n")
+    return zeros_check
+
 # 合并所有数据用于K折交叉验证
 all_inputs = np.vstack((train_inputs, val_inputs))
 all_labels = np.concatenate((train_labels, val_labels))
@@ -155,6 +234,9 @@ def create_and_train_model():
     
     # 添加特征屏蔽层，将前三个特征（折射率n1, n2, n3）设置为0
     model.add(FeatureMaskingLayer())
+    
+    # 添加调试层以验证掩码效果（仅在训练时打印）
+    model.add(DebugLayer(layer_name="after_masking"))
     
     # 添加第一层，不再需要自定义约束
     model.add(layers.Dense(
@@ -333,6 +415,10 @@ for train_idx, val_idx in kfold.split(all_inputs):
     
     # 创建并编译模型
     model, loss_function, optimizer = create_and_train_model()
+    
+    # 在第一折验证特征屏蔽功能
+    if fold_idx == 1:
+        verify_feature_masking(model, (fold_train_inputs[:5], fold_train_labels[:5]))
     
     # 打印模型总结（仅第一折时显示）
     if fold_idx == 1:
