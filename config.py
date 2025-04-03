@@ -54,7 +54,7 @@ MODEL_KERNEL_INITIALIZER = 'he_normal'  # 权重初始化方法
 #------------------------------------------------------------------------------
 # 优化器和训练控制
 MODEL_OPTIMIZER = 'adam'            # 优化器: 'adam', 'sgd', 'rmsprop'等
-TRAINING_EPOCHS = 100             # 训练轮数
+TRAINING_EPOCHS = 3             # 训练轮数
 TRAINING_BATCH_SIZE = 256           # 训练批次大小
 TRAINING_VALIDATION_SPLIT = 0.3     # 训练集中分出的验证集比例
 FIT_VERBOSE = 1                     # 训练过程的输出详细程度: 0=静默, 1=进度条, 2=每轮一行

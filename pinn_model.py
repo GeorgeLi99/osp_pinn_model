@@ -46,6 +46,40 @@ from loss_pinn import *
 from sklearn.model_selection import KFold
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 
+# 定义自定义层来屏蔽前三个特征（作为全局函数以便能够序列化）
+@keras.utils.register_keras_serializable(package="PINN")
+class FeatureMaskingLayer(tf.keras.layers.Layer):
+    """自定义层，用于屏蔽指定的输入特征（如折射率）"""
+    
+    def __init__(self, feature_indices_to_mask=None, **kwargs):
+        super(FeatureMaskingLayer, self).__init__(**kwargs)
+        # 定义要屏蔽的特征索引（前三个折射率特征）
+        self.feature_indices_to_mask = feature_indices_to_mask if feature_indices_to_mask is not None else [0, 1, 2]
+        
+    def build(self, input_shape):
+        # 创建掩码，与输入特征维度相同
+        feature_count = input_shape[-1]
+        mask_values = np.ones(feature_count)
+        # 将要屏蔽的特征索引对应的掩码值设为0
+        mask_values[self.feature_indices_to_mask] = 0.0
+        # 创建掩码张量作为不可训练的权重
+        self.mask = self.add_weight(
+            name='feature_mask',
+            shape=(feature_count,),
+            initializer=tf.constant_initializer(mask_values),
+            trainable=False
+        )
+        super(FeatureMaskingLayer, self).build(input_shape)
+        
+    def call(self, inputs):
+        # 应用掩码到输入
+        return inputs * self.mask
+        
+    def get_config(self):
+        config = super(FeatureMaskingLayer, self).get_config()
+        config.update({'feature_indices_to_mask': self.feature_indices_to_mask})
+        return config
+
 # 合并所有数据用于K折交叉验证
 all_inputs = np.vstack((train_inputs, val_inputs))
 all_labels = np.concatenate((train_labels, val_labels))
@@ -110,27 +144,6 @@ if not os.path.exists(logs_dir):
 # K折交叉验证函数
 def create_and_train_model():
     """创建和编译PINN模型"""
-    # 添加自定义权重约束类，用于保持某些输入特征的权重为0
-    class ZeroWeightsConstraint(tf.keras.constraints.Constraint):
-        """
-        自定义权重约束，将指定列的权重强制保持为0
-        """
-        def __init__(self, mask):
-            """
-            初始化
-            
-            参数:
-                mask: 二维掩码张量，值为0表示权重应保持为0，值为1表示权重可学习
-            """
-            self.mask = mask
-            
-        def __call__(self, w):
-            """应用约束"""
-            return w * self.mask
-        
-        def get_config(self):
-            return {'mask': self.mask}
-    
     # 创建物理信息神经网络模型
     model = tf.keras.models.Sequential()
     
@@ -140,21 +153,14 @@ def create_and_train_model():
     # 批归一化层
     model.add(layers.BatchNormalization())
     
-    # 创建掩码张量，前三个特征的权重将保持为0（对应n1, n2, n3）
-    feature_count = MODEL_INPUT_SHAPE[0]
-    # 创建一个与第一层权重矩阵形状相同的掩码
-    mask = np.ones((feature_count, MODEL_FIRST_LAYER_UNITS))
-    # 将掩码的前三行（对应折射率n1,n2,n3）设置为0
-    mask[0:3, :] = 0
-    # 将掩码转换为TensorFlow张量
-    weight_mask = tf.constant(mask, dtype=tf.float32)
+    # 添加特征屏蔽层，将前三个特征（折射率n1, n2, n3）设置为0
+    model.add(FeatureMaskingLayer())
     
-    # 添加第一层，使用权重约束
+    # 添加第一层，不再需要自定义约束
     model.add(layers.Dense(
         MODEL_FIRST_LAYER_UNITS, 
         kernel_initializer='he_normal',
-        use_bias=True,
-        kernel_constraint=ZeroWeightsConstraint(weight_mask)
+        use_bias=True
     ))
     
     # 继续添加其他层
@@ -413,9 +419,10 @@ for train_idx, val_idx in kfold.split(all_inputs):
     fold_idx += 1
 
 # 加载最佳模型（而非使用deepcopy）
+custom_objects = {'FeatureMaskingLayer': FeatureMaskingLayer}
 if os.path.exists(temp_best_model_path):
     print(f"正在加载最佳模型（第{best_fold_idx}折）...")
-    best_model = tf.keras.models.load_model(temp_best_model_path, compile=False)
+    best_model = tf.keras.models.load_model(temp_best_model_path, compile=False, custom_objects=custom_objects)
     # 重新编译模型
     if USE_PINN_LOSS:
         best_loss_function = PhysicsInformedLoss(physics_weight=PINN_PHYSICS_WEIGHT)
