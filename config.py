@@ -33,14 +33,21 @@ MODEL_OUTPUT_ACTIVATION = 'tanh'    # 输出层激活函数
 
 # 网络结构配置
 MODEL_FIRST_LAYER_UNITS = 24        # 第一隐藏层单元数
-MODEL_SECOND_LAYER_UNITS = 16       # 第二隐藏层单元数
-MODEL_KERNEL_INITIALIZER = 'he_normal'  # 权重初始化方法
 MODEL_FIRST_ACTIVATION = 'relu'     # 第一隐藏层激活函数
-MODEL_SECOND_ACTIVATION = 'relu'    # 第二隐藏层激活函数
+MODEL_FIRST_DROPOUT = 0.1           # 第一Dropout层的比率
+
+# 第二层 (隐藏层)
+MODEL_SECOND_LAYER_UNITS = 32     # 第二层神经元数量
+MODEL_SECOND_ACTIVATION = 'relu'  # 第二层激活函数
+MODEL_SECOND_DROPOUT = 0.1        # 第二层Dropout比例
+
+# 第三层 (隐藏层)
+MODEL_THIRD_LAYER_UNITS = 12      # 第三层神经元数量
+MODEL_THIRD_ACTIVATION = 'relu'   # 第三层激活函数
+MODEL_THIRD_DROPOUT = 0.1         # 第三层Dropout比例
 
 # 正则化参数
-MODEL_FIRST_DROPOUT = 0.1           # 第一Dropout层的比率
-MODEL_SECOND_DROPOUT = 0.1          # 第二Dropout层的比率
+MODEL_KERNEL_INITIALIZER = 'he_normal'  # 权重初始化方法
 
 #------------------------------------------------------------------------------
 # 3. 训练参数

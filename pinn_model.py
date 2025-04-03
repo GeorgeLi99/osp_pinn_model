@@ -110,26 +110,74 @@ if not os.path.exists(logs_dir):
 # K折交叉验证函数
 def create_and_train_model():
     """创建和编译PINN模型"""
+    # 添加自定义权重约束类，用于保持某些输入特征的权重为0
+    class ZeroWeightsConstraint(tf.keras.constraints.Constraint):
+        """
+        自定义权重约束，将指定列的权重强制保持为0
+        """
+        def __init__(self, mask):
+            """
+            初始化
+            
+            参数:
+                mask: 二维掩码张量，值为0表示权重应保持为0，值为1表示权重可学习
+            """
+            self.mask = mask
+            
+        def __call__(self, w):
+            """应用约束"""
+            return w * self.mask
+        
+        def get_config(self):
+            return {'mask': self.mask}
+    
     # 创建物理信息神经网络模型
-    model = tf.keras.models.Sequential([
-        layers.InputLayer(input_shape=MODEL_INPUT_SHAPE),
-        # 第一层：先BatchNormalization，然后Dense，再激活函数
-        layers.BatchNormalization(),
-        layers.Dense(MODEL_FIRST_LAYER_UNITS, kernel_initializer='he_normal', use_bias=False),
-        layers.BatchNormalization(),
-        layers.Activation(MODEL_FIRST_ACTIVATION),
-        layers.Dropout(MODEL_FIRST_DROPOUT),
-        
-        # 第二层：同样的模式
-        layers.Dense(MODEL_SECOND_LAYER_UNITS, kernel_initializer='he_normal', use_bias=False),
-        layers.BatchNormalization(),
-        layers.Activation(MODEL_SECOND_ACTIVATION),
-        layers.Dropout(MODEL_SECOND_DROPOUT),
-        
-        # 输出层
-        layers.Dense(MODEL_OUTPUT_UNITS, activation=MODEL_OUTPUT_ACTIVATION, kernel_initializer='he_normal')
-    ])
-
+    model = tf.keras.models.Sequential()
+    
+    # 添加输入层
+    model.add(layers.InputLayer(input_shape=MODEL_INPUT_SHAPE))
+    
+    # 批归一化层
+    model.add(layers.BatchNormalization())
+    
+    # 创建掩码张量，前三个特征的权重将保持为0（对应n1, n2, n3）
+    feature_count = MODEL_INPUT_SHAPE[0]
+    # 创建一个与第一层权重矩阵形状相同的掩码
+    mask = np.ones((feature_count, MODEL_FIRST_LAYER_UNITS))
+    # 将掩码的前三行（对应折射率n1,n2,n3）设置为0
+    mask[0:3, :] = 0
+    # 将掩码转换为TensorFlow张量
+    weight_mask = tf.constant(mask, dtype=tf.float32)
+    
+    # 添加第一层，使用权重约束
+    model.add(layers.Dense(
+        MODEL_FIRST_LAYER_UNITS, 
+        kernel_initializer='he_normal',
+        use_bias=True,
+        kernel_constraint=ZeroWeightsConstraint(weight_mask)
+    ))
+    
+    # 继续添加其他层
+    model.add(layers.BatchNormalization())
+    model.add(layers.Activation(MODEL_FIRST_ACTIVATION))
+    model.add(layers.Dropout(MODEL_FIRST_DROPOUT))
+    
+    # 第二层
+    model.add(layers.Dense(MODEL_SECOND_LAYER_UNITS, kernel_initializer='he_normal', use_bias=False))
+    model.add(layers.BatchNormalization())
+    model.add(layers.Activation(MODEL_SECOND_ACTIVATION))
+    model.add(layers.Dropout(MODEL_SECOND_DROPOUT))
+    
+    # 新增的第三层
+    model.add(layers.BatchNormalization())
+    model.add(layers.Dense(MODEL_THIRD_LAYER_UNITS, kernel_initializer='he_normal', use_bias=True))
+    model.add(layers.BatchNormalization())
+    model.add(layers.Activation(MODEL_THIRD_ACTIVATION))
+    model.add(layers.Dropout(MODEL_THIRD_DROPOUT))
+    
+    # 输出层
+    model.add(layers.Dense(MODEL_OUTPUT_UNITS, activation=MODEL_OUTPUT_ACTIVATION, kernel_initializer='he_normal'))
+    
     # 根据配置选择损失函数
     if USE_PINN_LOSS:
         # 使用物理信息损失函数进行编译
@@ -139,14 +187,14 @@ def create_and_train_model():
         # 使用Huber损失函数
         print("使用Huber损失函数")
         loss_function = tf.keras.losses.Huber(delta=1.0)
-
+    
     # 优化器配置 - 为GPU训练调整学习率
     if gpus:
         # 如果使用GPU，我们可以使用稍微更大的学习率
         optimizer = tf.keras.optimizers.Adam(learning_rate=GPU_LEARNING_RATE)
     else:
         optimizer = MODEL_OPTIMIZER
-
+    
     model.compile(
         loss=loss_function,
         optimizer=optimizer
