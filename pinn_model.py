@@ -9,6 +9,7 @@ import pandas as pd
 import time
 import datetime
 import matplotlib
+from genetic_optimizer import GeneticOptimizer  # 导入遗传算法优化器
 
 # 修改字体配置以解决中文乱码
 matplotlib.use('Agg')  # 使用非交互式后端
@@ -269,19 +270,48 @@ def create_and_train_model():
         print("使用Huber损失函数")
         loss_function = tf.keras.losses.Huber(delta=1.0)
     
-    # 优化器配置 - 使用SGD优化器及参数
-    if gpus:
-        # 如果使用GPU，我们可以使用稍微更大的学习率
-        optimizer = tf.keras.optimizers.SGD(
-            learning_rate=GPU_LEARNING_RATE,
-            momentum=OPTIMIZER_SGD_MOMENTUM,
-            decay=OPTIMIZER_SGD_DECAY
+    # 优化器配置 - 根据配置文件选择优化器
+    if MODEL_OPTIMIZER.lower() == 'genetic':
+        # 使用遗传算法优化器
+        print("使用遗传算法优化器 (Genetic Algorithm Optimizer)")
+        optimizer = GeneticOptimizer(
+            population_size=OPTIMIZER_GENETIC_POPULATION_SIZE,
+            mutation_rate=OPTIMIZER_GENETIC_MUTATION_RATE,
+            crossover_rate=OPTIMIZER_GENETIC_CROSSOVER_RATE,
+            selection_pressure=OPTIMIZER_GENETIC_SELECTION_PRESSURE,
+            learning_rate=OPTIMIZER_GENETIC_LEARNING_RATE if not gpus else GPU_LEARNING_RATE
+        )
+    elif MODEL_OPTIMIZER.lower() == 'sgd':
+        # 使用SGD优化器
+        print("使用SGD优化器 (Stochastic Gradient Descent)")
+        if gpus:
+            # 如果使用GPU，我们可以使用稍微更大的学习率
+            optimizer = tf.keras.optimizers.SGD(
+                learning_rate=GPU_LEARNING_RATE,
+                momentum=OPTIMIZER_SGD_MOMENTUM,
+                decay=OPTIMIZER_SGD_DECAY
+            )
+        else:
+            # 非GPU情况下使用默认学习率的SGD
+            optimizer = tf.keras.optimizers.SGD(
+                momentum=OPTIMIZER_SGD_MOMENTUM,
+                decay=OPTIMIZER_SGD_DECAY
+            )
+    elif MODEL_OPTIMIZER.lower() == 'adam':
+        # 使用Adam优化器
+        print("使用Adam优化器")
+        optimizer = tf.keras.optimizers.Adam(
+            learning_rate=GPU_LEARNING_RATE if gpus else 0.001
         )
     else:
-        # 非GPU情况下使用默认学习率的SGD
-        optimizer = tf.keras.optimizers.SGD(
-            momentum=OPTIMIZER_SGD_MOMENTUM,
-            decay=OPTIMIZER_SGD_DECAY
+        # 默认使用遗传算法优化器
+        print(f"未知优化器 '{MODEL_OPTIMIZER}'，默认使用遗传算法优化器")
+        optimizer = GeneticOptimizer(
+            population_size=OPTIMIZER_GENETIC_POPULATION_SIZE,
+            mutation_rate=OPTIMIZER_GENETIC_MUTATION_RATE,
+            crossover_rate=OPTIMIZER_GENETIC_CROSSOVER_RATE,
+            selection_pressure=OPTIMIZER_GENETIC_SELECTION_PRESSURE,
+            learning_rate=OPTIMIZER_GENETIC_LEARNING_RATE if not gpus else GPU_LEARNING_RATE
         )
     
     model.compile(
