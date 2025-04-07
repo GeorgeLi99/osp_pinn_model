@@ -229,11 +229,11 @@ def create_and_train_model():
     # 添加输入层
     model.add(layers.InputLayer(input_shape=MODEL_INPUT_SHAPE))
     
-    # 批归一化层
-    model.add(layers.BatchNormalization())
-    
-    # 添加特征屏蔽层，将前三个特征（折射率n1, n2, n3）设置为0
+    # 先添加特征屏蔽层，将前三个特征（折射率n1, n2, n3）设置为0
     model.add(FeatureMaskingLayer())
+    
+    # 然后进行批归一化，避免生成负数
+    model.add(layers.BatchNormalization())
     
     # 添加调试层以验证掩码效果（仅在训练时打印）
     model.add(DebugLayer(layer_name="after_masking"))
