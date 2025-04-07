@@ -63,7 +63,7 @@ OPTIMIZER_GENETIC_LEARNING_RATE = 0.01   # 学习率
 OPTIMIZER_SGD_MOMENTUM = 0.9       # SGD优化器动量参数
 OPTIMIZER_SGD_DECAY = 1e-5         # SGD优化器衰减率参数
 
-TRAINING_EPOCHS = 10             # 训练轮数
+TRAINING_EPOCHS = 1000              # 训练轮数
 TRAINING_BATCH_SIZE = 256           # 训练批次大小
 TRAINING_VALIDATION_SPLIT = 0.3     # 训练集中分出的验证集比例
 FIT_VERBOSE = 1                     # 训练过程的输出详细程度: 0=静默, 1=进度条, 2=每轮一行
@@ -74,7 +74,7 @@ FIT_VERBOSE = 1                     # 训练过程的输出详细程度: 0=静�
 # 学习率调整
 LR_REDUCE_MONITOR = 'val_loss'      # 监控指标
 LR_REDUCE_FACTOR = 0.9              # 学习率降低因子
-LR_REDUCE_PATIENCE = 10              # 停止提升的训练轮次
+LR_REDUCE_PATIENCE = 5              # 停止提升的训练轮次
 LR_REDUCE_MIN_DELTA = 0.0001        # 最小变化阈值
 LR_REDUCE_COOLDOWN = 0              # 冷却期
 LR_REDUCE_MIN_LR = 0.0001          # 最小学习率

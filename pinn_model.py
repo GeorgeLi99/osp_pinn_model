@@ -9,7 +9,7 @@ import pandas as pd
 import time
 import datetime
 import matplotlib
-from genetic_optimizer import GeneticOptimizer  # 导入遗传算法优化器
+from simple_genetic_optimizer import SimpleGeneticOptimizer  # 导入简化版遗传算法优化器
 
 # 修改字体配置以解决中文乱码
 matplotlib.use('Agg')  # 使用非交互式后端
@@ -272,9 +272,9 @@ def create_and_train_model():
     
     # 优化器配置 - 根据配置文件选择优化器
     if MODEL_OPTIMIZER.lower() == 'genetic':
-        # 使用遗传算法优化器
-        print("使用遗传算法优化器 (Genetic Algorithm Optimizer)")
-        optimizer = GeneticOptimizer(
+        # 使用简化版遗传算法优化器
+        print("使用简化版遗传算法优化器 (Simple Genetic Algorithm Optimizer)")
+        optimizer = SimpleGeneticOptimizer(
             population_size=OPTIMIZER_GENETIC_POPULATION_SIZE,
             mutation_rate=OPTIMIZER_GENETIC_MUTATION_RATE,
             crossover_rate=OPTIMIZER_GENETIC_CROSSOVER_RATE,
@@ -538,7 +538,13 @@ for train_idx, val_idx in kfold.split(all_inputs):
     fold_idx += 1
 
 # 加载最佳模型（而非使用deepcopy）
-custom_objects = {'FeatureMaskingLayer': FeatureMaskingLayer}
+# 添加SimpleGeneticOptimizer到custom_objects以确保模型加载时能识别
+custom_objects = {
+    'FeatureMaskingLayer': FeatureMaskingLayer,
+    'SimpleGeneticOptimizer': SimpleGeneticOptimizer,
+    # 为了兼容性，作为名称也添加
+    'GeneticOptimizer': SimpleGeneticOptimizer
+}
 if os.path.exists(temp_best_model_path):
     print(f"正在加载最佳模型（第{best_fold_idx}折）...")
     best_model = tf.keras.models.load_model(temp_best_model_path, compile=False, custom_objects=custom_objects)
@@ -550,7 +556,19 @@ if os.path.exists(temp_best_model_path):
     if gpus:
         best_optimizer = tf.keras.optimizers.Adam(learning_rate=GPU_LEARNING_RATE)
     else:
-        best_optimizer = MODEL_OPTIMIZER
+        # 判断优化器类型
+        if MODEL_OPTIMIZER.lower() == 'genetic':
+            # 使用新的SimpleGeneticOptimizer
+            best_optimizer = SimpleGeneticOptimizer(
+                population_size=OPTIMIZER_GENETIC_POPULATION_SIZE,
+                mutation_rate=OPTIMIZER_GENETIC_MUTATION_RATE,
+                crossover_rate=OPTIMIZER_GENETIC_CROSSOVER_RATE,
+                selection_pressure=OPTIMIZER_GENETIC_SELECTION_PRESSURE,
+                learning_rate=OPTIMIZER_GENETIC_LEARNING_RATE if not gpus else GPU_LEARNING_RATE
+            )
+        else:
+            # 使用其他标准优化器
+            best_optimizer = MODEL_OPTIMIZER
     best_model.compile(loss=best_loss_function, optimizer=best_optimizer)
     
     # 将最佳模型保存为最终模型
