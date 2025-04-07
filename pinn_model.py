@@ -295,11 +295,11 @@ def create_and_train_model():
 class GradientMonitor(tf.keras.callbacks.Callback):
     """监控训练过程中的梯度大小，帮助诊断梯度消失或爆炸问题。"""
     
-    def __init__(self, freq=5):
+    def __init__(self, freq=1):
         """初始化梯度监控器。
         
         参数:
-            freq: 每隔多少个epoch记录一次梯度信息
+            freq: 每隔多少个epoch记录一次梯度信息，默认为1（每个epoch都记录）
         """
         super(GradientMonitor, self).__init__()
         self.freq = freq
@@ -307,7 +307,9 @@ class GradientMonitor(tf.keras.callbacks.Callback):
     
     def on_epoch_end(self, epoch, logs=None):
         """在每个epoch结束时记录梯度信息。"""
-        if epoch % self.freq == 0:
+        # 将epoch转换为整数，并确保每个epoch都能被记录
+        epoch_int = int(epoch)
+        if epoch_int % self.freq == 0 or epoch == TRAINING_EPOCHS - 1:  # 确保最后一个epoch一定会被记录
             try:
                 # 获取模型权重的绝对值统计
                 weight_stats = {}
@@ -436,8 +438,8 @@ for train_idx, val_idx in kfold.split(all_inputs):
         verbose=LR_REDUCE_VERBOSE
     )
     
-    # 创建梯度监控回调函数
-    gradient_monitor = GradientMonitor(freq=5)
+    # 创建梯度监控回调函数 - 设置为每个epoch都记录
+    gradient_monitor = GradientMonitor(freq=1)
     
     # 为当前交叉验证折创建时间戳标记
     log_dir = os.path.join(logs_dir, f"fold_{fold_idx}_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
@@ -553,7 +555,7 @@ try:
     mse = mean_squared_error(val_labels, val_predictions)
     rmse = np.sqrt(mse)
     plt.text(PREDICTION_TEXT_POS[0], PREDICTION_TEXT_POS[1], 
-             f"R² = {r2:.4f}\nRMSE = {rmse:.4f}", 
+             f"R^2 = {r2:.4f}\nRMSE = {rmse:.4f}", 
              transform=plt.gca().transAxes, verticalalignment='top')
     
     plt.tight_layout()
