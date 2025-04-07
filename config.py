@@ -53,7 +53,7 @@ MODEL_KERNEL_INITIALIZER = 'he_normal'  # 权重初始化方法
 MODEL_OPTIMIZER = 'sgd'            # 优化器: 'adam', 'sgd', 'rmsprop'等
 OPTIMIZER_SGD_MOMENTUM = 0.9       # SGD优化器动量参数
 OPTIMIZER_SGD_DECAY = 1e-5         # SGD优化器衰减率参数
-TRAINING_EPOCHS = 2000             # 训练轮数
+TRAINING_EPOCHS = 3             # 训练轮数
 TRAINING_BATCH_SIZE = 256           # 训练批次大小
 TRAINING_VALIDATION_SPLIT = 0.3     # 训练集中分出的验证集比例
 FIT_VERBOSE = 1                     # 训练过程的输出详细程度: 0=静默, 1=进度条, 2=每轮一行
