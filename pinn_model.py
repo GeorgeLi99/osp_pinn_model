@@ -251,17 +251,10 @@ def create_and_train_model():
     model.add(layers.Dropout(MODEL_FIRST_DROPOUT))
     
     # 第二层
-    model.add(layers.Dense(MODEL_SECOND_LAYER_UNITS, kernel_initializer='he_normal', use_bias=False))
+    model.add(layers.Dense(MODEL_SECOND_LAYER_UNITS, kernel_initializer='he_normal', use_bias=True))
     model.add(layers.BatchNormalization())
     model.add(layers.Activation(MODEL_SECOND_ACTIVATION))
     model.add(layers.Dropout(MODEL_SECOND_DROPOUT))
-    
-    # 新增的第三层
-    model.add(layers.BatchNormalization())
-    model.add(layers.Dense(MODEL_THIRD_LAYER_UNITS, kernel_initializer='he_normal', use_bias=True))
-    model.add(layers.BatchNormalization())
-    model.add(layers.Activation(MODEL_THIRD_ACTIVATION))
-    model.add(layers.Dropout(MODEL_THIRD_DROPOUT))
     
     # 输出层
     model.add(layers.Dense(MODEL_OUTPUT_UNITS, activation=MODEL_OUTPUT_ACTIVATION, kernel_initializer='he_normal'))
@@ -276,12 +269,20 @@ def create_and_train_model():
         print("使用Huber损失函数")
         loss_function = tf.keras.losses.Huber(delta=1.0)
     
-    # 优化器配置 - 为GPU训练调整学习率
+    # 优化器配置 - 使用SGD优化器及参数
     if gpus:
         # 如果使用GPU，我们可以使用稍微更大的学习率
-        optimizer = tf.keras.optimizers.Adam(learning_rate=GPU_LEARNING_RATE)
+        optimizer = tf.keras.optimizers.SGD(
+            learning_rate=GPU_LEARNING_RATE,
+            momentum=OPTIMIZER_SGD_MOMENTUM,
+            decay=OPTIMIZER_SGD_DECAY
+        )
     else:
-        optimizer = MODEL_OPTIMIZER
+        # 非GPU情况下使用默认学习率的SGD
+        optimizer = tf.keras.optimizers.SGD(
+            momentum=OPTIMIZER_SGD_MOMENTUM,
+            decay=OPTIMIZER_SGD_DECAY
+        )
     
     model.compile(
         loss=loss_function,
