@@ -46,7 +46,7 @@ MODEL_SECOND_DROPOUT = 0.1        # 第二层Dropout比例
 # 正则化参数
 MODEL_KERNEL_INITIALIZER = 'random_normal'  # 权重初始化方法
 # 自定义权重初始化参数
-MODEL_WEIGHT_INIT_MEAN = 0.5           # 权重初始化均值
+MODEL_WEIGHT_INIT_MEAN = 10           # 权重初始化均值
 MODEL_WEIGHT_INIT_STDDEV = 0.05        # 权重初始化标准差
 
 #------------------------------------------------------------------------------
@@ -66,7 +66,7 @@ OPTIMIZER_GENETIC_LEARNING_RATE = 0.01   # 学习率
 OPTIMIZER_SGD_MOMENTUM = 0.9       # SGD优化器动量参数
 OPTIMIZER_SGD_DECAY = 1e-5         # SGD优化器衰减率参数
 
-TRAINING_EPOCHS = 100             # 训练轮数
+TRAINING_EPOCHS = 25             # 训练轮数
 TRAINING_BATCH_SIZE = 256           # 训练批次大小
 TRAINING_VALIDATION_SPLIT = 0.3     # 训练集中分出的验证集比例
 FIT_VERBOSE = 1                     # 训练过程的输出详细程度: 0=静默, 1=进度条, 2=每轮一行
