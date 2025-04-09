@@ -235,32 +235,50 @@ def create_and_train_model():
     # 先添加特征屏蔽层，将前三个特征（折射率n1, n2, n3）设置为0
     model.add(FeatureMaskingLayer())
     
-    # 然后进行批归一化，避免生成负数
-    model.add(layers.BatchNormalization())
+    # 移除了BatchNormalization层，保留原始权重值
     
     # 添加调试层以验证掩码效果（仅在训练时打印）
     model.add(DebugLayer(layer_name="after_masking"))
     
-    # 添加第一层，不再需要自定义约束
-    model.add(layers.Dense(
-        MODEL_FIRST_LAYER_UNITS, 
-        kernel_initializer='he_normal',
-        use_bias=True
-    ))
+    # 添加第一层，使用配置文件中的初始化参数并验证
+    print(f"\n权重初始化参数: mean={MODEL_WEIGHT_INIT_MEAN}, stddev={MODEL_WEIGHT_INIT_STDDEV}")
     
-    # 继续添加其他层
-    model.add(layers.BatchNormalization())
+    # 确保使用正确的初始化器
+    if MODEL_KERNEL_INITIALIZER == 'random_normal':
+        initializer = tf.keras.initializers.RandomNormal(
+            mean=MODEL_WEIGHT_INIT_MEAN, 
+            stddev=MODEL_WEIGHT_INIT_STDDEV
+        )
+        print(f"使用RandomNormal初始化器: mean={MODEL_WEIGHT_INIT_MEAN}, stddev={MODEL_WEIGHT_INIT_STDDEV}")
+    else:
+        initializer = MODEL_KERNEL_INITIALIZER
+        print(f"使用默认初始化器: {MODEL_KERNEL_INITIALIZER}")
+    
+    # 添加第一层
+    dense1 = layers.Dense(
+        MODEL_FIRST_LAYER_UNITS, 
+        kernel_initializer=initializer,
+        use_bias=True,
+        name="dense_layer1_weighted"
+    )
+    model.add(dense1)
+    
+    # 继续添加其他层 (移除了BatchNormalization)
     model.add(layers.Activation(MODEL_FIRST_ACTIVATION))
     model.add(layers.Dropout(MODEL_FIRST_DROPOUT))
     
-    # 第二层
-    model.add(layers.Dense(MODEL_SECOND_LAYER_UNITS, kernel_initializer='he_normal', use_bias=True))
-    model.add(layers.BatchNormalization())
+    # 第二层，使用配置文件中的初始化参数
+    model.add(layers.Dense(MODEL_SECOND_LAYER_UNITS, 
+                         kernel_initializer=initializer, 
+                         use_bias=True))
+    # 移除了BatchNormalization层
     model.add(layers.Activation(MODEL_SECOND_ACTIVATION))
     model.add(layers.Dropout(MODEL_SECOND_DROPOUT))
     
-    # 输出层
-    model.add(layers.Dense(MODEL_OUTPUT_UNITS, activation=MODEL_OUTPUT_ACTIVATION, kernel_initializer='he_normal'))
+    # 输出层，使用配置文件中的初始化参数
+    model.add(layers.Dense(MODEL_OUTPUT_UNITS, 
+                         activation=MODEL_OUTPUT_ACTIVATION, 
+                         kernel_initializer=initializer))
     
     # 根据配置选择损失函数
     if USE_PINN_LOSS:
@@ -322,6 +340,50 @@ def create_and_train_model():
     )
     
     return model, loss_function, optimizer
+
+# 创建权重监控回调类
+class WeightHistogramLogger(tf.keras.callbacks.Callback):
+    """在训练过程中记录每个层的权重直方图。"""
+    
+    def __init__(self, log_dir, freq=1):
+        """初始化权重直方图记录器。
+        
+        参数:
+            log_dir: TensorBoard日志目录
+            freq: 每隔多少个epoch记录一次权重直方图，默认为1（每个epoch都记录）
+        """
+        super(WeightHistogramLogger, self).__init__()
+        self.log_dir = log_dir
+        self.freq = freq
+        self.writer = tf.summary.create_file_writer(log_dir)
+    
+    def on_epoch_end(self, epoch, logs=None):
+        """在每个epoch结束时记录权重直方图。"""
+        if epoch % self.freq == 0:
+            with self.writer.as_default():
+                # 记录每个层的权重直方图
+                for i, layer in enumerate(self.model.layers):
+                    # 跳过没有权重的层
+                    if not layer.weights:
+                        continue
+                        
+                    layer_name = layer.name
+                    # 记录每个权重矩阵
+                    for j, weight in enumerate(layer.weights):
+                        weight_name = weight.name.replace(':', '_')
+                        # 记录权重直方图
+                        tf.summary.histogram(f'layer_{i}/{layer_name}/{weight_name}', weight, step=epoch)
+                        
+                        # 记录权重的统计信息
+                        tf.summary.scalar(f'stats/layer_{i}/{layer_name}/{weight_name}_mean', 
+                                        tf.reduce_mean(weight), step=epoch)
+                        tf.summary.scalar(f'stats/layer_{i}/{layer_name}/{weight_name}_std', 
+                                        tf.math.reduce_std(weight), step=epoch)
+                        tf.summary.scalar(f'stats/layer_{i}/{layer_name}/{weight_name}_min', 
+                                        tf.reduce_min(weight), step=epoch)
+                        tf.summary.scalar(f'stats/layer_{i}/{layer_name}/{weight_name}_max', 
+                                        tf.reduce_max(weight), step=epoch)
+                self.writer.flush()
 
 # 创建梯度监控回调类
 class GradientMonitor(tf.keras.callbacks.Callback):
@@ -494,6 +556,9 @@ for train_idx, val_idx in kfold.split(all_inputs):
     # 为当前交叉验证折创建时间戳标记
     log_dir = os.path.join(logs_dir, f"fold_{fold_idx}_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
     
+    # 创建权重直方图记录器回调
+    weight_histogram_logger = WeightHistogramLogger(log_dir=log_dir, freq=1)
+    
     # 创建TensorBoard回调
     tensorboard_callback = tf.keras.callbacks.TensorBoard(
         log_dir=log_dir,
@@ -504,26 +569,66 @@ for train_idx, val_idx in kfold.split(all_inputs):
         profile_batch=0,  # 禁用分析以提高性能
     )
     
-    # 使用正确的add_graph命令将模型架构图写入TensorBoard
+    # 检查和验证初始权重的设置
+    print("\n\n=== 检查模型各层初始权重 === ")
+    print(f"config.py中的权重初始化设置: MODEL_WEIGHT_INIT_MEAN={MODEL_WEIGHT_INIT_MEAN}, MODEL_WEIGHT_INIT_STDDEV={MODEL_WEIGHT_INIT_STDDEV}")
+    
+    for i, layer in enumerate(model.layers):
+        if hasattr(layer, 'weights') and len(layer.weights) > 0:
+            for j, weight in enumerate(layer.weights):
+                weight_mean = tf.reduce_mean(weight).numpy()
+                weight_std = tf.math.reduce_std(weight).numpy()
+                weight_min = tf.reduce_min(weight).numpy()
+                weight_max = tf.reduce_max(weight).numpy()
+                print(f"\u5c42 {i} ({layer.name}) - 权重 {j} ({weight.name}): \n  均值={weight_mean:.4f}, 标准差={weight_std:.4f}, 最小值={weight_min:.4f}, 最大值={weight_max:.4f}")
+    
+    # 将模型添加到TensorBoard并记录每个层的权重直方图
     try:
-        # 准备一个样本输入，使用与模型输入形状相同的形状
+        # 创建TensorBoard的writer
+        writer = tf.summary.create_file_writer(log_dir)
+        
+        # 记录模型概要文本
+        model_summary = []
+        model.summary(print_fn=lambda x: model_summary.append(x))
+        model_summary_str = '\n'.join(model_summary)
+        
+        # 准备用于模型计算图的输入
         sample_input = tf.zeros([1] + list(model.input_shape[1:]))
         
-        # 将模型图直接写入TensorBoard
-        tf.summary.trace_on(graph=True)
-        _ = model(sample_input)  # 前向传播以实例化模型图
+        # 添加模型计算图
+        @tf.function
+        def traced_model(inputs):
+            return model(inputs)
         
-        with tf.summary.create_file_writer(log_dir).as_default():
-            # 记录模型概要文本
-            model_summary = []
-            model.summary(print_fn=lambda x: model_summary.append(x))
-            model_summary_str = '\n'.join(model_summary)
+        # 使用writer记录及可视化信息
+        with writer.as_default():
+            # 添加模型概要文本
             tf.summary.text('model_summary', model_summary_str, step=0)
             
-            # 使用trace_export将计算图添加到TensorBoard
+            # 为每个层单独记录权重直方图
+            for i, layer in enumerate(model.layers):
+                # 跳过没有权重的层（如激活函数、dropout等）
+                if not layer.weights:
+                    continue
+                    
+                # 记录每个层的名称和每个权重矩阵
+                for j, weight in enumerate(layer.weights):
+                    weight_name = weight.name.replace(':', '_')
+                    # 将权重引用作为标量记录每个权重矩阵的分布
+                    tf.summary.histogram(f'layer_{i}/{weight_name}', weight, step=0)
+                    
+                    # 记录权重的统计信息
+                    tf.summary.scalar(f'layer_{i}/{weight_name}_mean', tf.reduce_mean(weight), step=0)
+                    tf.summary.scalar(f'layer_{i}/{weight_name}_std', tf.math.reduce_std(weight), step=0)
+                    tf.summary.scalar(f'layer_{i}/{weight_name}_min', tf.reduce_min(weight), step=0)
+                    tf.summary.scalar(f'layer_{i}/{weight_name}_max', tf.reduce_max(weight), step=0)
+            
+            # 添加计算图 (这相当于add_graph)
+            tf.summary.trace_on(graph=True)
+            traced_model(sample_input)
             tf.summary.trace_export(
-                name="model_graph",
-                step=0,
+                name="model_graph", 
+                step=0, 
                 profiler_outdir=log_dir
             )
             
@@ -548,7 +653,7 @@ for train_idx, val_idx in kfold.split(all_inputs):
         epochs=TRAINING_EPOCHS, 
         batch_size=TRAINING_BATCH_SIZE,
         validation_data=(fold_val_inputs, fold_val_labels),
-        callbacks=[reduce_lr, gradient_monitor, tensorboard_callback],  # 添加TensorBoard回调
+        callbacks=[reduce_lr, gradient_monitor, tensorboard_callback, weight_histogram_logger],  # 添加权重直方图记录器
         verbose=FIT_VERBOSE
     )
     
