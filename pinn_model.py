@@ -586,7 +586,7 @@ else:
 print("\n生成验证集预测可视化...")
 try:
     # 使用所有原始验证数据进行预测
-    val_predictions = best_model.predict(val_inputs)
+    val_predictions = best_model.predict(val_inputs, batch_size=TRAINING_BATCH_SIZE, verbose=FIT_VERBOSE)
     
     # 创建真实值vs预测值散点图
     plt.figure(figsize=PREDICTION_PLOT_FIGSIZE)

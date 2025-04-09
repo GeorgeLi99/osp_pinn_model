@@ -63,7 +63,7 @@ OPTIMIZER_GENETIC_LEARNING_RATE = 0.01   # 学习率
 OPTIMIZER_SGD_MOMENTUM = 0.9       # SGD优化器动量参数
 OPTIMIZER_SGD_DECAY = 1e-5         # SGD优化器衰减率参数
 
-TRAINING_EPOCHS = 1000              # 训练轮数
+TRAINING_EPOCHS = 3              # 训练轮数
 TRAINING_BATCH_SIZE = 256           # 训练批次大小
 TRAINING_VALIDATION_SPLIT = 0.3     # 训练集中分出的验证集比例
 FIT_VERBOSE = 1                     # 训练过程的输出详细程度: 0=静默, 1=进度条, 2=每轮一行
