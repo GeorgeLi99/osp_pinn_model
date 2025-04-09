@@ -129,6 +129,11 @@ def get_abs_path(rel_path):
 # 默认模型路径（绝对路径）
 PRETRAINED_MODEL_PATH = get_abs_path(os.path.join(MODELS_BASE_DIR, f'{MODEL_FILENAME_PREFIX}_2.h5'))
 
+# 自定义模型路径（允许用户指定具体的模型文件路径）
+# 如果设置为None，将按照预定义路径顺序尝试查找模型
+# 如果设置为具体路径，将直接使用该路径加载模型
+CUSTOM_MODEL_PATH = r"C:\0_code\new_osp\models\best_pinn_model.h5"
+
 # 预定义的模型文件备选列表
 # .h5格式模型文件（优先）
 MODEL_PATHS_H5 = [

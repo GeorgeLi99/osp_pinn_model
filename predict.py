@@ -66,36 +66,48 @@ if not os.path.exists(TEST_DATA_PATH):
 # 获取模型文件路径 - 专注于.h5格式
 print("只搜索.h5格式模型文件...")
 
-# 定义.h5模型路径列表
-model_paths = []
-# 预定义的.h5模型路径
-h5_model_paths = [
-    os.path.abspath(os.path.join(os.getcwd(), MODELS_BASE_DIR, f'{MODEL_FILENAME_PREFIX}_2.h5')),
-    os.path.abspath(os.path.join(os.getcwd(), MODELS_BASE_DIR, f'{MODEL_FILENAME_PREFIX}.h5')),
-    os.path.join(MODELS_BASE_DIR, f'{MODEL_FILENAME_PREFIX}_2.h5'),
-    os.path.join(MODELS_BASE_DIR, f'{MODEL_FILENAME_PREFIX}.h5'),
-    'models/best_pinn_model_2.h5',
-    'models/best_pinn_model.h5'
-]
-model_paths.extend(h5_model_paths)
+# 如果设置了自定义模型路径，则优先使用它
+if CUSTOM_MODEL_PATH is not None:
+    print(f"正在使用自定义模型路径: {CUSTOM_MODEL_PATH}")
+    found_model_path = CUSTOM_MODEL_PATH if os.path.isfile(CUSTOM_MODEL_PATH) else None
+    if not found_model_path:
+        print(f"警告: 自定义模型路径 {CUSTOM_MODEL_PATH} 不存在或不是文件")
+        print("将尝试使用预定义的模型路径...") 
 
-# 确保PRETRAINED_MODEL_PATH也在搜索列表中（如果是.h5格式）
-if PRETRAINED_MODEL_PATH.lower().endswith('.h5') and PRETRAINED_MODEL_PATH not in model_paths:
-    model_paths.insert(0, PRETRAINED_MODEL_PATH)  # 放在最前面
+# 如果没有自定义模型路径或自定义路径无效，则使用预定义路径
+if CUSTOM_MODEL_PATH is None or (CUSTOM_MODEL_PATH is not None and not os.path.isfile(CUSTOM_MODEL_PATH)):
+    # 定义.h5模型路径列表
+    model_paths = []
+    # 预定义的.h5模型路径
+    h5_model_paths = [
+        os.path.abspath(os.path.join(os.getcwd(), MODELS_BASE_DIR, f'{MODEL_FILENAME_PREFIX}_2.h5')),
+        os.path.abspath(os.path.join(os.getcwd(), MODELS_BASE_DIR, f'{MODEL_FILENAME_PREFIX}.h5')),
+        os.path.join(MODELS_BASE_DIR, f'{MODEL_FILENAME_PREFIX}_2.h5'),
+        os.path.join(MODELS_BASE_DIR, f'{MODEL_FILENAME_PREFIX}.h5'),
+        'models/best_pinn_model_2.h5',
+        'models/best_pinn_model.h5'
+    ]
+    model_paths.extend(h5_model_paths)
 
-# 标准化所有路径（Windows系统中解决斜杠方向问题）
-model_paths = [os.path.normpath(path) for path in model_paths]
-# 移除重复路径
-model_paths = list(dict.fromkeys(model_paths))
+    # 确保PRETRAINED_MODEL_PATH也在搜索列表中（如果是.h5格式）
+    if PRETRAINED_MODEL_PATH.lower().endswith('.h5') and PRETRAINED_MODEL_PATH not in model_paths:
+        model_paths.insert(0, PRETRAINED_MODEL_PATH)  # 放在最前面
 
-# 尝试查找可用的模型文件
-found_model_path = None
-for path in model_paths:
-    print(f"检查模型路径: {path}")
-    if os.path.isfile(path):
-        found_model_path = path
-        print(f"找到模型文件: {found_model_path}")
-        break
+# 如果使用预定义路径（没有有效的自定义路径），则标准化路径并查找模型
+if CUSTOM_MODEL_PATH is None or (CUSTOM_MODEL_PATH is not None and not os.path.isfile(CUSTOM_MODEL_PATH)):
+    # 标准化所有路径（Windows系统中解决斜杠方向问题）
+    model_paths = [os.path.normpath(path) for path in model_paths]
+    # 移除重复路径
+    model_paths = list(dict.fromkeys(model_paths))
+
+    # 尝试查找可用的模型文件
+    found_model_path = None
+    for path in model_paths:
+        print(f"检查模型路径: {path}")
+        if os.path.isfile(path):
+            found_model_path = path
+            print(f"找到模型文件: {found_model_path}")
+            break
 
 if not found_model_path:
     # 如果没有找到预定义路径中的文件，尝试在MODELS_BASE_DIR目录中查找.h5文件
@@ -112,6 +124,7 @@ if not found_model_path:
             print(f"{MODELS_BASE_DIR}目录内容: {os.listdir(MODELS_BASE_DIR)}")
         exit(1)
 
+# 获取最终的模型路径
 model_path = found_model_path
 print(f"将使用模型: {model_path}")
 start_time = time.time()
