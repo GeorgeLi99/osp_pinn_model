@@ -3,11 +3,13 @@ import tensorflow as tf
 import numpy as np
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras.utils import plot_model
 from config import *
 import os
 import pandas as pd
 import time
 import datetime
+import io
 import matplotlib
 from simple_genetic_optimizer import SimpleGeneticOptimizer  # 导入简化版遗传算法优化器
 
@@ -456,6 +458,24 @@ for train_idx, val_idx in kfold.split(all_inputs):
     # 打印模型总结（仅第一折时显示）
     if fold_idx == 1:
         model.summary()
+        
+        # 生成并保存模型架构图
+        try:
+            # 创建模型图像目录
+            model_viz_dir = os.path.join(models_dir, 'model_visualizations')
+            os.makedirs(model_viz_dir, exist_ok=True)
+            
+            # 生成两种模型结构图：简单版和带层大小的详细版
+            model_plot_path = os.path.join(model_viz_dir, 'model_architecture.png')
+            plot_model(model, to_file=model_plot_path, show_shapes=False, show_layer_names=True)
+            print(f"模型架构图已保存到: {model_plot_path}")
+            
+            model_plot_with_shapes_path = os.path.join(model_viz_dir, 'model_architecture_with_shapes.png')
+            plot_model(model, to_file=model_plot_with_shapes_path, show_shapes=True, show_layer_names=True, 
+                       expand_nested=True, dpi=96)
+            print(f"详细模型架构图已保存到: {model_plot_with_shapes_path}")
+        except Exception as e:
+            print(f"生成模型架构图时出错: {e}")
     
     # 创建学习率降低回调函数
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
@@ -483,6 +503,41 @@ for train_idx, val_idx in kfold.split(all_inputs):
         update_freq='epoch',  # 每个epoch更新一次日志
         profile_batch=0,  # 禁用分析以提高性能
     )
+    
+    # 使用正确的add_graph命令将模型架构图写入TensorBoard
+    try:
+        # 准备一个样本输入，使用与模型输入形状相同的形状
+        sample_input = tf.zeros([1] + list(model.input_shape[1:]))
+        
+        # 将模型图直接写入TensorBoard
+        tf.summary.trace_on(graph=True)
+        _ = model(sample_input)  # 前向传播以实例化模型图
+        
+        with tf.summary.create_file_writer(log_dir).as_default():
+            # 记录模型概要文本
+            model_summary = []
+            model.summary(print_fn=lambda x: model_summary.append(x))
+            model_summary_str = '\n'.join(model_summary)
+            tf.summary.text('model_summary', model_summary_str, step=0)
+            
+            # 使用trace_export将计算图添加到TensorBoard
+            tf.summary.trace_export(
+                name="model_graph",
+                step=0,
+                profiler_outdir=log_dir
+            )
+            
+            # 可选：生成模型架构图也作为图像记录
+            buf = io.BytesIO()
+            plot_model(model, to_file=buf, show_shapes=True, show_layer_names=True, expand_nested=True)
+            buf.seek(0)
+            model_image = tf.image.decode_png(buf.getvalue(), channels=4)
+            model_image = tf.expand_dims(model_image, 0)
+            tf.summary.image('model_architecture', model_image, step=0)
+            
+        print(f"模型架构图已通过add_graph方式写入TensorBoard日志，可在GRAPHS选项卡中查看")
+    except Exception as e:
+        print(f"将模型图写入TensorBoard时出错: {e}")
     
     # 记录训练开始时间
     start_time = time.time()
