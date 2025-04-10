@@ -51,39 +51,7 @@ from loss_pinn import *
 from sklearn.model_selection import KFold
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 
-# 定义自定义层来屏蔽前三个特征（作为全局函数以便能够序列化）
-@keras.utils.register_keras_serializable(package="PINN")
-class FeatureMaskingLayer(tf.keras.layers.Layer):
-    """自定义层，用于屏蔽指定的输入特征（如折射率）"""
-    
-    def __init__(self, feature_indices_to_mask=None, **kwargs):
-        super(FeatureMaskingLayer, self).__init__(**kwargs)
-        # 定义要屏蔽的特征索引（前三个折射率特征）
-        self.feature_indices_to_mask = feature_indices_to_mask if feature_indices_to_mask is not None else [0, 1, 2]
-        
-    def build(self, input_shape):
-        # 创建掩码，与输入特征维度相同
-        feature_count = input_shape[-1]
-        mask_values = np.ones(feature_count)
-        # 将要屏蔽的特征索引对应的掩码值设为0
-        mask_values[self.feature_indices_to_mask] = 0.0
-        # 创建掩码张量作为不可训练的权重
-        self.mask = self.add_weight(
-            name='feature_mask',
-            shape=(feature_count,),
-            initializer=tf.constant_initializer(mask_values),
-            trainable=False
-        )
-        super(FeatureMaskingLayer, self).build(input_shape)
-        
-    def call(self, inputs):
-        # 应用掩码到输入
-        return inputs * self.mask
-        
-    def get_config(self):
-        config = super(FeatureMaskingLayer, self).get_config()
-        config.update({'feature_indices_to_mask': self.feature_indices_to_mask})
-        return config
+# [注意：已移除特征屏蔽层，所有输入特征都直接用于网络的训练]
 
 # 用于调试和验证的层
 @keras.utils.register_keras_serializable(package="PINN")
@@ -107,62 +75,7 @@ class DebugLayer(tf.keras.layers.Layer):
         config.update({'layer_name': self.layer_name})
         return config
 
-# 功能函数：验证特征屏蔽是否正常工作
-def verify_feature_masking(model, sample_data):
-    """
-    验证特征屏蔽层是否正常工作
-    
-    参数:
-        model: 包含FeatureMaskingLayer的模型
-        sample_data: 用于验证的样本数据
-    """
-    print("\n=== 验证特征屏蔽 ===")
-    
-    # 创建一个截断模型，仅包含到FeatureMaskingLayer的层
-    masking_layer_index = None
-    for i, layer in enumerate(model.layers):
-        if isinstance(layer, FeatureMaskingLayer):
-            masking_layer_index = i
-            break
-    
-    if masking_layer_index is None:
-        print("未找到FeatureMaskingLayer，无法验证")
-        return
-    
-    # 创建截断模型
-    truncated_model = tf.keras.models.Sequential(model.layers[:masking_layer_index+1])
-    
-    # 获取原始输入
-    if isinstance(sample_data, tuple):
-        input_data = sample_data[0]  # 如果sample_data是(x, y)元组
-    else:
-        input_data = sample_data
-    
-    # 仅使用少量样本
-    if len(input_data) > 5:
-        input_data = input_data[:5]
-    
-    # 原始数据
-    print("原始输入数据（前5个样本的前6个特征）:")
-    for i in range(len(input_data)):
-        print(f"  样本 {i+1}: {input_data[i, :6]}")
-    
-    # 应用掩码后的数据
-    masked_output = truncated_model.predict(input_data)
-    print("\n掩码应用后的数据（前5个样本的前6个特征）:")
-    for i in range(len(masked_output)):
-        print(f"  样本 {i+1}: {masked_output[i, :6]}")
-    
-    # 检查前三个特征是否为0
-    zeros_check = np.all(masked_output[:, :3] == 0)
-    print(f"\n前三个特征是否全为0: {'是' if zeros_check else '否'}")
-    # 检查其他特征是否保持不变
-    if zeros_check:
-        unchanged_check = np.allclose(masked_output[:, 3:], input_data[:, 3:])
-        print(f"其他特征是否保持不变: {'是' if unchanged_check else '否'}")
-        
-    print("=== 验证完成 ===\n")
-    return zeros_check
+# [注意：已移除特征屏蔽层的验证函数，不再需要验证特征屏蔽]
 
 # 合并所有数据用于K折交叉验证
 all_inputs = np.vstack((train_inputs, val_inputs))
@@ -234,13 +147,11 @@ def create_and_train_model():
     # 添加输入层
     model.add(layers.InputLayer(input_shape=MODEL_INPUT_SHAPE))
     
-    # 先添加特征屏蔽层，将前三个特征（折射率n1, n2, n3）设置为0
-    model.add(FeatureMaskingLayer())
-    
+    # 注意：移除了特征屏蔽层，现在所有特征（包括前三个折射率特征）都将被使用
     # 移除了BatchNormalization层，保留原始权重值
     
-    # 添加调试层以验证掩码效果（仅在训练时打印）
-    model.add(DebugLayer(layer_name="after_masking"))
+    # 添加调试层（仅在训练时打印）
+    model.add(DebugLayer(layer_name="input_features"))
     
     # 添加第一层，使用配置文件中的初始化参数并验证
     print(f"\n权重初始化参数: mean={MODEL_WEIGHT_INIT_MEAN}, stddev={MODEL_WEIGHT_INIT_STDDEV}")
@@ -724,9 +635,7 @@ for train_idx, val_idx in kfold.split(all_inputs):
     # 创建并编译模型
     model, loss_function, optimizer = create_and_train_model()
     
-    # 在第一折验证特征屏蔽功能
-    if fold_idx == 1:
-        verify_feature_masking(model, (fold_train_inputs[:5], fold_train_labels[:5]))
+    # 注意：已移除特征屏蔽验证
     
     # 打印模型总结（仅第一折时显示）
     if fold_idx == 1:
@@ -956,7 +865,7 @@ for train_idx, val_idx in kfold.split(all_inputs):
 # 加载最佳模型（而非使用deepcopy）
 # 添加SimpleGeneticOptimizer到custom_objects以确保模型加载时能识别
 custom_objects = {
-    'FeatureMaskingLayer': FeatureMaskingLayer,
+    # 已移除FeatureMaskingLayer
     'SimpleGeneticOptimizer': SimpleGeneticOptimizer,
     # 为了兼容性，作为名称也添加
     'GeneticOptimizer': SimpleGeneticOptimizer
