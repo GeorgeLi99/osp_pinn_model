@@ -12,9 +12,9 @@ from tensorflow.keras import layers
 # 1. 数据处理参数
 #------------------------------------------------------------------------------
 # 数据路径和列选择
-DATA_PATH = r"C:\0_code\new_osp\data\triple_film_sweep_with_n_results_1.csv"         # 训练数据CSV文件路径
-COLUMN = 6                          # 要处理的目标列（索引从0开始）
-TEST_DATA_PATH = r"C:\0_code\new_osp\data\triple_film_sweep_with_n_results.csv"  # 测试数据文件路径
+DATA_PATH = r"C:\0_code\new_osp\data\train_data.csv"         # 训练数据CSV文件路径
+COLUMN = 7                          # 要处理的目标列（索引从0开始）
+TEST_DATA_PATH = r"C:\0_code\new_osp\data\test_data.csv"  # 测试数据文件路径
 TEST_DATA_COLUMN = None             # 测试数据目标列，如果为None则使用与训练相同的列
 
 # 数据分割和处理参数
@@ -29,16 +29,16 @@ HANDLE_NAN = 'interpolate'          # NaN处理方式: 'drop', 'zero', 'mean', '
 # 输入与输出配置
 MODEL_INPUT_SHAPE = (COLUMN,)       # 输入层形状
 MODEL_OUTPUT_UNITS = 1              # 输出层单元数
-MODEL_OUTPUT_ACTIVATION = 'sigmoid'    # 输出层激活函数
+MODEL_OUTPUT_ACTIVATION = 'relu'    # 输出层激活函数
 
 # 网络结构配置 - 优化为两层隐藏层架构
 MODEL_FIRST_LAYER_UNITS = 64        # 第一隐藏层单元数 (增加单元数以提高表达能力)
-MODEL_FIRST_ACTIVATION = 'tanh'     # 第一隐藏层激活函数
+MODEL_FIRST_ACTIVATION = 'relu'     # 第一隐藏层激活函数
 MODEL_FIRST_DROPOUT = 0.2           # 第一Dropout层的比率 (略微增加以防止过拟合)
 
 # 第二层 (隐藏层)
 MODEL_SECOND_LAYER_UNITS = 32     # 第二层神经元数量
-MODEL_SECOND_ACTIVATION = 'tanh'  # 第二层激活函数
+MODEL_SECOND_ACTIVATION = 'relu'  # 第二层激活函数
 MODEL_SECOND_DROPOUT = 0.1        # 第二层Dropout比例
 
 # 第三层参数已移除，改为只使用两层隐藏层架构
@@ -46,8 +46,8 @@ MODEL_SECOND_DROPOUT = 0.1        # 第二层Dropout比例
 # 正则化参数
 MODEL_KERNEL_INITIALIZER = 'random_normal'  # 权重初始化方法
 # 自定义权重初始化参数
-MODEL_WEIGHT_INIT_MEAN = 0.201           # 权重初始化均值
-MODEL_WEIGHT_INIT_STDDEV = 0.05        # 权重初始化标准差
+MODEL_WEIGHT_INIT_MEAN = 0.0           # 权重初始化均值
+MODEL_WEIGHT_INIT_STDDEV = 0.2        # 权重初始化标准差
 
 #------------------------------------------------------------------------------
 # 3. 训练参数
@@ -67,7 +67,7 @@ OPTIMIZER_SGD_MOMENTUM = 0.9       # SGD优化器动量参数
 OPTIMIZER_SGD_DECAY = 1e-5         # SGD优化器衰减率参数
 
 TRAINING_EPOCHS = 25             # 训练轮数
-TRAINING_BATCH_SIZE = 2           # 训练批次大小
+TRAINING_BATCH_SIZE = 128           # 训练批次大小
 TRAINING_VALIDATION_SPLIT = 0.3     # 训练集中分出的验证集比例
 
 #------------------------------------------------------------------------------
@@ -76,16 +76,16 @@ TRAINING_VALIDATION_SPLIT = 0.3     # 训练集中分出的验证集比例
 # 权重可视化开关
 
 # 权重分布直方图及 TensorBoard 记录
-ENABLE_WEIGHT_HISTOGRAM = False      # 是否启用权重直方图可视化
+ENABLE_WEIGHT_HISTOGRAM = True      # 是否启用权重直方图可视化
 WEIGHT_HIST_FREQ = 1                # 每多少个epoch记录一次权重直方图
 WEIGHT_HIST_BINS = 50               # 直方图的bins数量
 
 # Matplotlib权重可视化器参数
-ENABLE_MATPLOTLIB_VISUALIZER = False  # 是否启用Matplotlib权重可视化器
+ENABLE_MATPLOTLIB_VISUALIZER = True  # 是否启用Matplotlib权重可视化器
 WEIGHT_VIS_FREQ = 1                 # 每多少个epoch生成一次可视化图
 
 # 神经元权重监测器参数
-ENABLE_NEURON_MONITOR = False        # 是否启用神经元权重监测器
+ENABLE_NEURON_MONITOR = True        # 是否启用神经元权重监测器
 NEURON_MONITOR_FREQ = 1             # 每多少个epoch记录一次神经元权重
 NEURON_MONITOR_PER_LAYER = 5        # 每层监测的神经元数量
 FIT_VERBOSE = 1                     # 训练过程的输出详细程度: 0=静默, 1=进度条, 2=每轮一行
@@ -102,6 +102,14 @@ LR_REDUCE_COOLDOWN = 0              # 冷却期
 LR_REDUCE_MIN_LR = 0.0001          # 最小学习率
 LR_REDUCE_VERBOSE = 1               # 输出详细程度
 
+# 早停参数
+EARLY_STOPPING_ENABLED = True       # 是否启用早停
+EARLY_STOPPING_MONITOR = 'val_loss' # 监控指标
+EARLY_STOPPING_PATIENCE = 10        # 在停止训练前等待的轮数
+EARLY_STOPPING_MIN_DELTA = 0.0005   # 最小变化阈值
+EARLY_STOPPING_RESTORE_BEST = True  # 是否恢复最佳权重
+EARLY_STOPPING_VERBOSE = 1          # 输出详细程度
+
 #------------------------------------------------------------------------------
 # 5. K折交叉验证参数
 #------------------------------------------------------------------------------
@@ -113,13 +121,13 @@ KFOLD_RANDOM_SEED = 42              # K折随机种子，确保结果可重现
 # 6. 物理信息神经网络（PINN）参数
 #------------------------------------------------------------------------------
 # PINN损失函数参数
-PINN_PHYSICS_WEIGHT = 0.5          # 物理约束项权重
-PINN_SMOOTHNESS_WEIGHT = 0.2       # 平滑约束权重  
-PINN_NEGATIVE_PENALTY_WEIGHT = 0.5 # 负值惩罚权重
-PINN_DERIVATIVE_WEIGHT = 0.3       # 导数约束权重
+PINN_PHYSICS_WEIGHT = 2.0          # 物理约束项权重（大幅提高）
+PINN_SMOOTHNESS_WEIGHT = 1.0       # 平滑约束权重（大幅提高） 
+PINN_NEGATIVE_PENALTY_WEIGHT = 1.5 # 负值惩罚权重（大幅提高）
+PINN_DERIVATIVE_WEIGHT = 1.0       # 导数约束权重（大幅提高）
 
 # 损失函数选择开关
-USE_PINN_LOSS = False              # 是否使用物理信息神经网络损失函数，False则使用Huber损失
+USE_PINN_LOSS = True              # 是否使用物理信息神经网络损失函数，False则使用Huber损失
 
 # 损失函数配置
 PINN_DATA_LOSS_TYPE = 'mse'         # 数据损失类型：'mse'、'mae'

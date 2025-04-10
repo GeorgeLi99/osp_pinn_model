@@ -799,6 +799,18 @@ for train_idx, val_idx in kfold.split(all_inputs):
         )
         callbacks_list.append(neuron_monitor)
         print(f"已启用神经元权重监测器, 频率={NEURON_MONITOR_FREQ} epochs, 每层{NEURON_MONITOR_PER_LAYER}个神经元")
+        
+    # 添加早停回调函数
+    if EARLY_STOPPING_ENABLED:
+        early_stopping = tf.keras.callbacks.EarlyStopping(
+            monitor=EARLY_STOPPING_MONITOR,
+            patience=EARLY_STOPPING_PATIENCE,
+            min_delta=EARLY_STOPPING_MIN_DELTA,
+            restore_best_weights=EARLY_STOPPING_RESTORE_BEST,
+            verbose=EARLY_STOPPING_VERBOSE
+        )
+        callbacks_list.append(early_stopping)
+        print(f"已启用早停功能, 监控={EARLY_STOPPING_MONITOR}, 耐心度={EARLY_STOPPING_PATIENCE} epochs")
     
     # 创建TensorBoard回调
     tensorboard_callback = tf.keras.callbacks.TensorBoard(
