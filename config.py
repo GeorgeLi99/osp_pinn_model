@@ -13,7 +13,7 @@ from tensorflow.keras import layers
 #------------------------------------------------------------------------------
 # 数据路径和列选择
 DATA_PATH = r"C:\0_code\new_osp\data\train_data.csv"         # 训练数据CSV文件路径
-COLUMN = 7                          # 要处理的目标列（索引从0开始）
+COLUMN = 6                          # 要处理的目标列（索引从0开始）
 TEST_DATA_PATH = r"C:\0_code\new_osp\data\test_data.csv"  # 测试数据文件路径
 TEST_DATA_COLUMN = None             # 测试数据目标列，如果为None则使用与训练相同的列
 
@@ -29,7 +29,7 @@ HANDLE_NAN = 'interpolate'          # NaN处理方式: 'drop', 'zero', 'mean', '
 # 输入与输出配置
 MODEL_INPUT_SHAPE = (COLUMN,)       # 输入层形状
 MODEL_OUTPUT_UNITS = 1              # 输出层单元数
-MODEL_OUTPUT_ACTIVATION = 'relu'    # 输出层激活函数
+MODEL_OUTPUT_ACTIVATION = 'linear'  # 输出层激活函数 - 改为linear允许任意输出
 
 # 网络结构配置 - 优化为两层隐藏层架构
 MODEL_FIRST_LAYER_UNITS = 64        # 第一隐藏层单元数 (增加单元数以提高表达能力)
@@ -44,10 +44,10 @@ MODEL_SECOND_DROPOUT = 0.1        # 第二层Dropout比例
 # 第三层参数已移除，改为只使用两层隐藏层架构
 
 # 正则化参数
-MODEL_KERNEL_INITIALIZER = 'random_normal'  # 权重初始化方法
-# 自定义权重初始化参数
-MODEL_WEIGHT_INIT_MEAN = 0.0           # 权重初始化均值
-MODEL_WEIGHT_INIT_STDDEV = 0.3        # 权重初始化标准差
+MODEL_KERNEL_INITIALIZER = 'he_normal'  # 权重初始化方法，适合ReLU激活函数
+# 自定义权重初始化参数 - 使用he_normal时这些参数不生效
+MODEL_WEIGHT_INIT_MEAN = 0.0           # 权重初始化均值 (仅用于random_normal)
+MODEL_WEIGHT_INIT_STDDEV = 0.3        # 权重初始化标准差 (仅用于random_normal)
 
 #------------------------------------------------------------------------------
 # 3. 训练参数
@@ -66,7 +66,7 @@ OPTIMIZER_GENETIC_LEARNING_RATE = 0.01   # 学习率
 OPTIMIZER_SGD_MOMENTUM = 0.9       # SGD优化器动量参数
 OPTIMIZER_SGD_DECAY = 1e-5         # SGD优化器衰减率参数
 
-TRAINING_EPOCHS = 3             # 训练轮数
+TRAINING_EPOCHS = 100             # 训练轮数
 TRAINING_BATCH_SIZE = 128           # 训练批次大小
 TRAINING_VALIDATION_SPLIT = 0.3     # 训练集中分出的验证集比例
 
@@ -121,10 +121,10 @@ KFOLD_RANDOM_SEED = 42              # K折随机种子，确保结果可重现
 # 6. 物理信息神经网络（PINN）参数
 #------------------------------------------------------------------------------
 # PINN损失函数参数
-PINN_PHYSICS_WEIGHT = 2.0          # 物理约束项权重（大幅提高）
-PINN_SMOOTHNESS_WEIGHT = 1.0       # 平滑约束权重（大幅提高） 
-PINN_NEGATIVE_PENALTY_WEIGHT = 1.5 # 负值惩罚权重（大幅提高）
-PINN_DERIVATIVE_WEIGHT = 1.0       # 导数约束权重（大幅提高）
+PINN_PHYSICS_WEIGHT = 2.0          # 物理约束项权重
+PINN_SMOOTHNESS_WEIGHT = 1.0       # 平滑约束权重 
+PINN_NEGATIVE_PENALTY_WEIGHT = 0.5 # 负值惩罚权重（降低以减少输出做能强烈偏向正向）
+PINN_DERIVATIVE_WEIGHT = 1.0       # 导数约束权重
 
 # 损失函数选择开关
 USE_PINN_LOSS = True              # 是否使用物理信息神经网络损失函数，False则使用Huber损失
