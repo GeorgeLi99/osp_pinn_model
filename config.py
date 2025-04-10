@@ -29,16 +29,16 @@ HANDLE_NAN = 'interpolate'          # NaN处理方式: 'drop', 'zero', 'mean', '
 # 输入与输出配置
 MODEL_INPUT_SHAPE = (COLUMN,)       # 输入层形状
 MODEL_OUTPUT_UNITS = 1              # 输出层单元数
-MODEL_OUTPUT_ACTIVATION = 'tanh'    # 输出层激活函数
+MODEL_OUTPUT_ACTIVATION = 'sigmoid'    # 输出层激活函数
 
 # 网络结构配置 - 优化为两层隐藏层架构
 MODEL_FIRST_LAYER_UNITS = 64        # 第一隐藏层单元数 (增加单元数以提高表达能力)
-MODEL_FIRST_ACTIVATION = 'relu'     # 第一隐藏层激活函数
+MODEL_FIRST_ACTIVATION = 'tanh'     # 第一隐藏层激活函数
 MODEL_FIRST_DROPOUT = 0.2           # 第一Dropout层的比率 (略微增加以防止过拟合)
 
 # 第二层 (隐藏层)
 MODEL_SECOND_LAYER_UNITS = 32     # 第二层神经元数量
-MODEL_SECOND_ACTIVATION = 'relu'  # 第二层激活函数
+MODEL_SECOND_ACTIVATION = 'tanh'  # 第二层激活函数
 MODEL_SECOND_DROPOUT = 0.1        # 第二层Dropout比例
 
 # 第三层参数已移除，改为只使用两层隐藏层架构
@@ -46,14 +46,14 @@ MODEL_SECOND_DROPOUT = 0.1        # 第二层Dropout比例
 # 正则化参数
 MODEL_KERNEL_INITIALIZER = 'random_normal'  # 权重初始化方法
 # 自定义权重初始化参数
-MODEL_WEIGHT_INIT_MEAN = 10           # 权重初始化均值
+MODEL_WEIGHT_INIT_MEAN = 0.4           # 权重初始化均值
 MODEL_WEIGHT_INIT_STDDEV = 0.05        # 权重初始化标准差
 
 #------------------------------------------------------------------------------
 # 3. 训练参数
 #------------------------------------------------------------------------------
 # 优化器和训练控制
-MODEL_OPTIMIZER = 'genetic'        # 优化器: 'adam', 'sgd', 'rmsprop', 'genetic'等
+MODEL_OPTIMIZER = 'sgd'        # 优化器: 'adam', 'sgd', 'rmsprop', 'genetic'等
 
 # 遗传算法优化器参数
 OPTIMIZER_GENETIC_POPULATION_SIZE = 20   # 种群大小

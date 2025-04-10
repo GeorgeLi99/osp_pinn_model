@@ -11,7 +11,9 @@ import time
 import datetime
 import io
 import matplotlib
+import matplotlib.pyplot as plt
 from simple_genetic_optimizer import SimpleGeneticOptimizer  # 导入简化版遗传算法优化器
+from neuron_monitor import NeuronWeightMonitor  # 导入神经元权重监测器
 
 # 修改字体配置以解决中文乱码
 matplotlib.use('Agg')  # 使用非交互式后端
@@ -385,6 +387,215 @@ class WeightHistogramLogger(tf.keras.callbacks.Callback):
                                         tf.reduce_max(weight), step=epoch)
                 self.writer.flush()
 
+# 创建使用matplotlib直接可视化权重的回调类
+class MatplotlibWeightVisualizer(tf.keras.callbacks.Callback):
+    """使用Matplotlib直接可视化神经网络每层权重的回调
+    
+    在每个训练周期结束时直接显示每层的权重分布直方图
+    """
+    def __init__(self, freq=1, bins=50, figsize=(15, 10)):
+        """初始化权重可视化器
+        
+        Args:
+            freq: 显示频率，默认为1（每个epoch）
+            bins: 直方图的bins数量
+            figsize: 图像大小
+            wait_time: 显示每个图形的暂停时间（秒）
+        """
+        super().__init__()
+        self.freq = freq
+        self.bins = bins
+        self.figsize = figsize
+        # 记录每层的权重统计信息
+        self.weight_stats = {}
+        
+        # 确保使用可以在非图形界面工作的后端
+        # 首先检查当前后端
+        current_backend = matplotlib.get_backend()
+        print(f"当前Matplotlib后端: {current_backend}")
+        
+        # 禁用交互式显示，改为保存文件
+        self.output_dir = os.path.join(os.getcwd(), 'weight_plots')
+        os.makedirs(self.output_dir, exist_ok=True)
+        print(f"已初始化Matplotlib权重可视化器 - 将保存图像到目录: {self.output_dir}")
+        
+    def on_train_begin(self, logs=None):
+        """训练开始时调用，创建权重统计记录的字典"""
+        # 初始化权重统计记录
+        for i, layer in enumerate(self.model.layers):
+            if not layer.weights:
+                continue
+                
+            layer_name = f"{i}_{layer.name}"
+            self.weight_stats[layer_name] = {}
+            
+            for j, weight in enumerate(layer.weights):
+                weight_name = weight.name.replace(':', '_')
+                self.weight_stats[layer_name][weight_name] = {
+                    'means': [],
+                    'stds': [],
+                    'mins': [],
+                    'maxs': [],
+                    'epochs': []
+                }
+    
+    def on_epoch_end(self, epoch, logs=None):
+        """每个训练周期结束时直接实时显示权重直方图"""
+        # 每 freq 个epoch显示一次
+        if epoch % self.freq != 0:
+            return
+            
+        # 收集各层权重数据
+        weight_data = []
+        
+        # 仅收集主要层的数据，为了简化显示
+        for i, layer in enumerate(self.model.layers):
+            # 只关注有权重的层，主要是Dense层
+            if not layer.weights or 'dense' not in layer.name.lower():
+                continue
+                
+            layer_name = f"{i}_{layer.name}"
+            
+            # 确保该层在数据字典中存在
+            if layer_name not in self.weight_stats:
+                self.weight_stats[layer_name] = {}
+            
+            # 通常每层都有kernel和bias两个权重矩阵
+            for j, weight in enumerate(layer.weights):
+                weight_name = weight.name.replace(':', '_')
+                weight_values = weight.numpy().flatten()  # 展平权重矩阵
+                
+                # 计算权重统计信息
+                mean_val = np.mean(weight_values)
+                std_val = np.std(weight_values)
+                min_val = np.min(weight_values)
+                max_val = np.max(weight_values)
+                
+                # 确保该权重矩阵在字典中存在
+                if weight_name not in self.weight_stats[layer_name]:
+                    self.weight_stats[layer_name][weight_name] = {
+                        'means': [],
+                        'stds': [],
+                        'mins': [],
+                        'maxs': [],
+                        'epochs': []
+                    }
+                
+                # 将统计信息添加到记录中
+                weight_stats = self.weight_stats[layer_name][weight_name]
+                weight_stats['means'].append(mean_val)
+                weight_stats['stds'].append(std_val)
+                weight_stats['mins'].append(min_val)
+                weight_stats['maxs'].append(max_val)
+                weight_stats['epochs'].append(epoch)
+                
+                # 已记录的数据保存下来，用于显示
+                weight_data.append({
+                    'layer_index': i,
+                    'layer_name': layer.name,
+                    'weight_name': weight_name,
+                    'weight_values': weight_values,
+                    'mean': mean_val,
+                    'std': std_val,
+                    'min': min_val,
+                    'max': max_val,
+                    'stats': weight_stats
+                })
+        
+        # 没有权重数据则直接返回
+        if not weight_data:
+            return
+            
+        # 清除之前的图形
+        plt.close('all')
+        
+        # 第一个图：所有层的权重直方图合集
+        fig1 = plt.figure(figsize=self.figsize)
+        # 不使用set_window_title，因为这只在交互式后端下有效
+        
+        # 计算子图布局
+        n_layers = len(weight_data)
+        n_cols = min(2, n_layers)  # 最多2列
+        n_rows = (n_layers + n_cols - 1) // n_cols  # 向上取整
+        
+        plt.suptitle(f"Epoch {epoch} - 神经网络权重分布", fontsize=16)
+        
+        # 绘制每一层的权重直方图
+        for i, data in enumerate(weight_data):
+            ax = plt.subplot(n_rows, n_cols, i+1)
+            
+            # 绘制直方图
+            plt.hist(data['weight_values'], bins=self.bins, alpha=0.7, color='blue')
+            plt.axvline(data['mean'], color='red', linestyle='dashed', linewidth=1)
+            
+            # 添加标题和标签
+            plt.title(f"{data['layer_name']} - {data['weight_name'].split('/')[-1]}")
+            plt.xlabel("权重值")
+            plt.ylabel("频数")
+            
+            # 添加统计信息
+            stats_text = f"均值: {data['mean']:.4f}\n标准差: {data['std']:.4f}\n最小值: {data['min']:.4f}\n最大值: {data['max']:.4f}"
+            plt.annotate(stats_text, xy=(0.05, 0.95), xycoords='axes fraction',
+                       va='top', ha='left', bbox=dict(boxstyle='round', fc='white', alpha=0.7))
+        
+        plt.tight_layout(rect=[0, 0, 1, 0.95])  # 留出空间给主标题
+        
+        # 第二个图：权重随时间变化的趋势图
+        # 仅当有足够数据且不是第一个epoch时才显示
+        if epoch > 0:
+            fig2 = plt.figure(figsize=self.figsize)
+            plt.suptitle(f"权重统计随时间变化 (到Epoch {epoch})", fontsize=16)
+            
+            # 绘制每一层的权重随时间的变化图
+            for i, data in enumerate(weight_data):
+                stats = data['stats']
+                if len(stats['epochs']) <= 1:
+                    continue
+                    
+                ax = plt.subplot(n_rows, n_cols, i+1)
+                plt.plot(stats['epochs'], stats['means'], 'r-', label='均值')
+                plt.fill_between(stats['epochs'], 
+                              np.array(stats['means']) - np.array(stats['stds']),
+                              np.array(stats['means']) + np.array(stats['stds']),
+                              color='r', alpha=0.2)
+                plt.plot(stats['epochs'], stats['mins'], 'g--', label='最小值')
+                plt.plot(stats['epochs'], stats['maxs'], 'b--', label='最大值')
+                plt.title(f"{data['layer_name']} - {data['weight_name'].split('/')[-1]}")
+                plt.xlabel("Epoch")
+                plt.ylabel("值")
+                plt.legend(loc='best', fontsize='small')
+                plt.grid(True, alpha=0.3)
+            
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
+        
+        # 保存图表
+        fig1_path = os.path.join(self.output_dir, f"epoch_{epoch:03d}_weights_distribution.png")
+        plt.figure(fig1.number)
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.savefig(fig1_path, dpi=150)
+        
+        # 如果第二个图存在，也保存它
+        if epoch > 0:
+            fig2_path = os.path.join(self.output_dir, f"epoch_{epoch:03d}_weights_trends.png")
+            plt.figure(fig2.number)
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
+            plt.savefig(fig2_path, dpi=150)
+        
+        # 关闭所有图形以释放内存
+        plt.close('all')
+        
+        # 打印简单的状态信息
+        if epoch == 0 or epoch % 5 == 0:
+            # 安全访问统计数据
+            mean_value = "N/A"
+            if weight_data and len(weight_data) > 0:
+                try:
+                    # 取第一个权重的均值
+                    mean_value = f"{weight_data[0]['mean']:.4f}"
+                except (KeyError, IndexError):
+                    pass
+            print(f"Epoch {epoch}: 已生成权重分布图并保存到 {self.output_dir}\epoch_{epoch:03d}_*.png - 均值={mean_value}")
+
 # 创建梯度监控回调类
 class GradientMonitor(tf.keras.callbacks.Callback):
     """监控训练过程中的梯度大小，帮助诊断梯度消失或爆炸问题。"""
@@ -559,6 +770,21 @@ for train_idx, val_idx in kfold.split(all_inputs):
     # 创建权重直方图记录器回调
     weight_histogram_logger = WeightHistogramLogger(log_dir=log_dir, freq=1)
     
+    # 创建Matplotlib权重可视化器回调 - 保存权重分布图
+    matplotlib_visualizer = MatplotlibWeightVisualizer(
+        freq=1,  # 每个epoch生成一次
+        bins=50,  # 直方图的bins数量
+        figsize=(15, 10)  # 图像大小
+    )
+    
+    # 创建神经元权重监测器 - 监测各个神经元的权重变化
+    neuron_monitor = NeuronWeightMonitor(
+        output_dir='neuron_weights',  # 输出目录
+        freq=1,  # 每个epoch记录一次
+        max_neurons_per_layer=5,  # 每层监测5个神经元
+        layer_name_filter='dense'  # 只监测dense层
+    )
+    
     # 创建TensorBoard回调
     tensorboard_callback = tf.keras.callbacks.TensorBoard(
         log_dir=log_dir,
@@ -653,7 +879,7 @@ for train_idx, val_idx in kfold.split(all_inputs):
         epochs=TRAINING_EPOCHS, 
         batch_size=TRAINING_BATCH_SIZE,
         validation_data=(fold_val_inputs, fold_val_labels),
-        callbacks=[reduce_lr, gradient_monitor, tensorboard_callback, weight_histogram_logger],  # 添加权重直方图记录器
+        callbacks=[reduce_lr, gradient_monitor, tensorboard_callback, weight_histogram_logger, matplotlib_visualizer, neuron_monitor],  # 添加神经元权重监测器
         verbose=FIT_VERBOSE
     )
     
