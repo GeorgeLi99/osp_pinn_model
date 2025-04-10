@@ -46,7 +46,7 @@ MODEL_SECOND_DROPOUT = 0.1        # 第二层Dropout比例
 # 正则化参数
 MODEL_KERNEL_INITIALIZER = 'random_normal'  # 权重初始化方法
 # 自定义权重初始化参数
-MODEL_WEIGHT_INIT_MEAN = 0.4           # 权重初始化均值
+MODEL_WEIGHT_INIT_MEAN = 0.201           # 权重初始化均值
 MODEL_WEIGHT_INIT_STDDEV = 0.05        # 权重初始化标准差
 
 #------------------------------------------------------------------------------
@@ -67,8 +67,27 @@ OPTIMIZER_SGD_MOMENTUM = 0.9       # SGD优化器动量参数
 OPTIMIZER_SGD_DECAY = 1e-5         # SGD优化器衰减率参数
 
 TRAINING_EPOCHS = 25             # 训练轮数
-TRAINING_BATCH_SIZE = 256           # 训练批次大小
+TRAINING_BATCH_SIZE = 2           # 训练批次大小
 TRAINING_VALIDATION_SPLIT = 0.3     # 训练集中分出的验证集比例
+
+#------------------------------------------------------------------------------
+# 4. 权重监测参数
+#------------------------------------------------------------------------------
+# 权重可视化开关
+
+# 权重分布直方图及 TensorBoard 记录
+ENABLE_WEIGHT_HISTOGRAM = False      # 是否启用权重直方图可视化
+WEIGHT_HIST_FREQ = 1                # 每多少个epoch记录一次权重直方图
+WEIGHT_HIST_BINS = 50               # 直方图的bins数量
+
+# Matplotlib权重可视化器参数
+ENABLE_MATPLOTLIB_VISUALIZER = False  # 是否启用Matplotlib权重可视化器
+WEIGHT_VIS_FREQ = 1                 # 每多少个epoch生成一次可视化图
+
+# 神经元权重监测器参数
+ENABLE_NEURON_MONITOR = False        # 是否启用神经元权重监测器
+NEURON_MONITOR_FREQ = 1             # 每多少个epoch记录一次神经元权重
+NEURON_MONITOR_PER_LAYER = 5        # 每层监测的神经元数量
 FIT_VERBOSE = 1                     # 训练过程的输出详细程度: 0=静默, 1=进度条, 2=每轮一行
 
 #------------------------------------------------------------------------------

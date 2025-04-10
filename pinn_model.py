@@ -767,23 +767,38 @@ for train_idx, val_idx in kfold.split(all_inputs):
     # 为当前交叉验证折创建时间戳标记
     log_dir = os.path.join(logs_dir, f"fold_{fold_idx}_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
     
-    # 创建权重直方图记录器回调
-    weight_histogram_logger = WeightHistogramLogger(log_dir=log_dir, freq=1)
+    # 初始化回调列表
+    callbacks_list = []
     
-    # 创建Matplotlib权重可视化器回调 - 保存权重分布图
-    matplotlib_visualizer = MatplotlibWeightVisualizer(
-        freq=1,  # 每个epoch生成一次
-        bins=50,  # 直方图的bins数量
-        figsize=(15, 10)  # 图像大小
-    )
+    # 根据配置创建权重直方图记录器回调
+    if ENABLE_WEIGHT_HISTOGRAM:
+        weight_histogram_logger = WeightHistogramLogger(
+            log_dir=log_dir, 
+            freq=WEIGHT_HIST_FREQ
+        )
+        callbacks_list.append(weight_histogram_logger)
+        print(f"已启用权重直方图记录器, 频率={WEIGHT_HIST_FREQ} epochs")
     
-    # 创建神经元权重监测器 - 监测各个神经元的权重变化
-    neuron_monitor = NeuronWeightMonitor(
-        output_dir='neuron_weights',  # 输出目录
-        freq=1,  # 每个epoch记录一次
-        max_neurons_per_layer=5,  # 每层监测5个神经元
-        layer_name_filter='dense'  # 只监测dense层
-    )
+    # 根据配置创建Matplotlib权重可视化器回调
+    if ENABLE_MATPLOTLIB_VISUALIZER:
+        matplotlib_visualizer = MatplotlibWeightVisualizer(
+            freq=WEIGHT_VIS_FREQ,  # 使用配置的频率
+            bins=WEIGHT_HIST_BINS,  # 使用配置的bins数量
+            figsize=(15, 10)  # 图像大小固定
+        )
+        callbacks_list.append(matplotlib_visualizer)
+        print(f"已启用Matplotlib权重可视化器, 频率={WEIGHT_VIS_FREQ} epochs")
+    
+    # 根据配置创建神经元权重监测器
+    if ENABLE_NEURON_MONITOR:
+        neuron_monitor = NeuronWeightMonitor(
+            output_dir='neuron_weights',  # 输出目录
+            freq=NEURON_MONITOR_FREQ,  # 使用配置的频率
+            max_neurons_per_layer=NEURON_MONITOR_PER_LAYER,  # 每层监测的神经元数量
+            layer_name_filter='dense'  # 只监测dense层
+        )
+        callbacks_list.append(neuron_monitor)
+        print(f"已启用神经元权重监测器, 频率={NEURON_MONITOR_FREQ} epochs, 每层{NEURON_MONITOR_PER_LAYER}个神经元")
     
     # 创建TensorBoard回调
     tensorboard_callback = tf.keras.callbacks.TensorBoard(
@@ -874,12 +889,15 @@ for train_idx, val_idx in kfold.split(all_inputs):
     start_time = time.time()
     
     # 训练模型
+    # 组合所有回调
+    all_callbacks = [reduce_lr, gradient_monitor, tensorboard_callback] + callbacks_list
+    
     history = model.fit(
         fold_train_inputs, fold_train_labels, 
         epochs=TRAINING_EPOCHS, 
         batch_size=TRAINING_BATCH_SIZE,
         validation_data=(fold_val_inputs, fold_val_labels),
-        callbacks=[reduce_lr, gradient_monitor, tensorboard_callback, weight_histogram_logger, matplotlib_visualizer, neuron_monitor],  # 添加神经元权重监测器
+        callbacks=all_callbacks,  # 使用根据配置生成的回调列表
         verbose=FIT_VERBOSE
     )
     
