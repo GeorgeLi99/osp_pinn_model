@@ -31,7 +31,7 @@ def generate_input_features(num_samples, num_features=6):
 
 def complex_function(X):
     """
-    中等复杂度的非周期函数，将6个输入特征映射到[0, 1]范围内的输出
+    中等复杂度的函数关系，结合多种非线性变换和特征交互
     
     参数:
         X: 形状为 (num_samples, 6) 的numpy数组
@@ -39,36 +39,62 @@ def complex_function(X):
     返回:
         形状为 (num_samples,) 的numpy数组，值在[0, 1]之间
     """
-    # 解包特征
+    # 给特征变量命名
     x1, x2, x3, x4, x5, x6 = X[:, 0], X[:, 1], X[:, 2], X[:, 3], X[:, 4], X[:, 5]
     
-    # 非线性转换 - 移除了三角函数，使用多项式、指数、对数等非周期函数
-    f1 = (x1**2 - x2**3) / (1 + 0.5 * x1 * x2)  # 多项式分数
-    f2 = x3**2 * np.exp(-x4)                    # 保留，二次项与指数的组合
-    f3 = np.log(1 + x5) / (1 + np.exp(x6 - 0.5)) # 保留，对数和逆Sigmoid的组合
-    f4 = 0.5 * (x1 * x3 + x2 * x4) / (1 + abs(x1 * x3 - x2 * x4))  # 非线性比率
-    f5 = 0.2 * (x5**2.5) * np.sqrt(0.1 + x6)    # 幂函数组合
+    # 1. 线性项
+    linear_term = 0.15 * (x1 - x2 + 1.2*x3 - 0.8*x4 + x5 - 0.5*x6)
     
-    # 特征交互 - 增强了特征交互的复杂性
-    f6 = 0.1 * (x1 * x2 * x3) + 0.05 * (x4 * x5 * x6) + 0.02 * (x1**2 * x6)  # 三阶多项式
-    f7 = 0.15 * np.sqrt(x1 + x3 + x5) * np.sqrt(x2 + x4 + x6) + 0.05 * np.log(1 + x1 * x2 * x3 * x4)  # 根式与对数
+    # 2. 平方项
+    squared_term = 0.25 * (x1**2 + x2**2 + x3**2 + x4**2 + x5**2 + x6**2)
     
-    # 增加一些更复杂的交互项
-    f8 = 0.05 * np.exp(-(x1 - 0.5)**2 - (x2 - 0.5)**2) * (x3 + x4)  # 高斯型函数与线性组合
-    f9 = 0.02 * (x5 / (0.1 + x1)) * (x6 / (0.1 + x2))  # 非线性比率
+    # 3. 交互项（特征之间的乘积）
+    interaction_term = 0.2 * (x1*x2 + x2*x3 + x3*x4 + x4*x5 + x5*x6)
     
-    # 组合所有效应 - 调整了权重以平衡各项贡献
-    y = 0.2 * f1 + 0.15 * f2 + 0.15 * f3 + 0.1 * f4 + 0.1 * f5 + 0.1 * f6 + 0.1 * f7 + 0.05 * f8 + 0.05 * f9
+    # 4. 三次项
+    cubic_term = 0.1 * (x1**3 - x3**3 + x5**3)
+    
+    # 5. 简化的三角函数
+    trig_term = 0.15 * (
+        np.sin(2*np.pi*x1) * np.cos(2*np.pi*x2) + 
+        np.sin(2*np.pi*x4) * np.cos(2*np.pi*x5)
+    )
+    
+    # 6. 指数项
+    exp_term = 0.1 * np.exp(-(x1-0.5)**2 - (x2-0.5)**2)
+    
+    # 7. 简化的分段函数
+    condition = x1 + x2 > 1.0
+    region1 = 0.2 * (x3 + x4)
+    region2 = -0.2 * (x5 + x6)
+    condition_term = np.where(condition, region1, region2)
+    
+    # 将所有项组合起来
+    y = (
+        linear_term + 
+        squared_term + 
+        interaction_term + 
+        cubic_term + 
+        trig_term + 
+        exp_term + 
+        condition_term
+    )
     
     # 将结果映射到[0, 1]区间
-    # 首先计算当前输出的范围
-    y_min, y_max = np.min(y), np.max(y)
+    # 使用sigmoid函数进行压缩
+    y_scaled = 1.0 / (1.0 + np.exp(-y))
     
-    # 然后将其缩放到[0, 1]区间
-    y_scaled = (y - y_min) / (y_max - y_min)
+    # 添加适量噪声模拟真实数据
+    # 使用变化的噪声模式
+    noise_scale = 0.01 + 0.02 * np.abs(np.sin(3 * y_scaled))  # 噪声大小随输出值变化
+    noise = np.random.normal(0, noise_scale, y_scaled.shape)
     
-    # 添加少量噪声以模拟真实数据
-    noise = np.random.normal(0, 0.01, y_scaled.shape)
+    # 添加少量突发噪声（间歇性）
+    spikes = np.random.random(y_scaled.shape) < 0.005  # 0.5%的概率出现小突发
+    spike_values = (np.random.random(y_scaled.shape) - 0.5) * 0.05  # 较小的突发幅度
+    noise += np.where(spikes, spike_values, 0)
+    
+    # 添加噪声
     y_with_noise = y_scaled + noise
     
     # 确保所有值都在[0, 1]范围内

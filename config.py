@@ -31,36 +31,58 @@ MODEL_INPUT_SHAPE = (COLUMN,)       # 输入层形状
 MODEL_OUTPUT_UNITS = 1              # 输出层单元数
 MODEL_OUTPUT_ACTIVATION = 'linear'  # 输出层激活函数 - 改为linear允许任意输出
 
-# 网络结构配置 - 优化为两层隐藏层架构
-MODEL_FIRST_LAYER_UNITS = 64        # 第一隐藏层单元数 (增加单元数以提高表达能力)
-MODEL_FIRST_ACTIVATION = 'relu'     # 第一隐藏层激活函数
-MODEL_FIRST_DROPOUT = 0.2           # 第一Dropout层的比率 (略微增加以防止过拟合)
+# 网络结构配置 - 使用更深但更窄的网络架构
+# 每层的神经元数量和比例参数
+# 第一层 (输入层后的第一个全连接层)
+MODEL_LAYER1_UNITS = 56           # units_1: 56
+MODEL_LAYER1_ACTIVATION = 'relu'  # 保持激活函数不变
+MODEL_LAYER1_DROPOUT = 0.2       # dropout_1: 0.2
 
-# 第二层 (隐藏层)
-MODEL_SECOND_LAYER_UNITS = 32     # 第二层神经元数量
-MODEL_SECOND_ACTIVATION = 'relu'  # 第二层激活函数
-MODEL_SECOND_DROPOUT = 0.1        # 第二层Dropout比例
+# 第二层
+MODEL_LAYER2_UNITS = 5            # units_2: 5
+MODEL_LAYER2_ACTIVATION = 'relu'  # 激活函数
+MODEL_LAYER2_DROPOUT = 0.05        # dropout_2: 0.05
 
-# 第三层参数已移除，改为只使用两层隐藏层架构
+# 第三层
+MODEL_LAYER3_UNITS = 18           # units_3: 18
+MODEL_LAYER3_ACTIVATION = 'relu'  # 激活函数
+MODEL_LAYER3_DROPOUT = 0.0        # dropout_3: 0.0
+
+# 第四层
+MODEL_LAYER4_UNITS = 16           # units_4: 16
+MODEL_LAYER4_ACTIVATION = 'relu'  # 激活函数
+MODEL_LAYER4_DROPOUT = 0.2        # dropout_4: 0.2
+
+# 第五层
+MODEL_LAYER5_UNITS = 6            # units_5: 6
+MODEL_LAYER5_ACTIVATION = 'relu'  # 激活函数
+MODEL_LAYER5_DROPOUT = 0.05       # dropout_5: 0.05
+
+# 第六层
+MODEL_LAYER6_UNITS = 4            # units_6: 4
+MODEL_LAYER6_ACTIVATION = 'relu'  # 激活函数
+MODEL_LAYER6_DROPOUT = 0.2        # dropout_6: 0.2
+
+# DenseNet相关配置已移除
 
 # 正则化参数
-MODEL_KERNEL_INITIALIZER = 'he_normal'  # 权重初始化方法，适合ReLU激活函数
-# 自定义权重初始化参数 - 使用he_normal时这些参数不生效
-MODEL_WEIGHT_INIT_MEAN = 0.0           # 权重初始化均值 (仅用于random_normal)
-MODEL_WEIGHT_INIT_STDDEV = 0.3        # 权重初始化标准差 (仅用于random_normal)
+MODEL_KERNEL_INITIALIZER = 'random_normal'  # 改为随机正态分布初始化，更适合PINN模型
+# 自定义权重初始化参数 - 为random_normal设置更合适的值
+MODEL_WEIGHT_INIT_MEAN = 0.1           # 设置为正值，有助于避免输出为零的问题
+MODEL_WEIGHT_INIT_STDDEV = 0.05        # 降低标准差防止初始权重过大
 
 #------------------------------------------------------------------------------
 # 3. 训练参数
 #------------------------------------------------------------------------------
 # 优化器和训练控制
-MODEL_OPTIMIZER = 'sgd'        # 优化器: 'adam', 'sgd', 'rmsprop', 'genetic'等
+MODEL_OPTIMIZER = 'genetic'     # 改用遗传算法优化器，适合复杂的非凸优化问题
 
-# 遗传算法优化器参数
-OPTIMIZER_GENETIC_POPULATION_SIZE = 20   # 种群大小
-OPTIMIZER_GENETIC_MUTATION_RATE = 0.01   # 变异率
-OPTIMIZER_GENETIC_CROSSOVER_RATE = 0.8   # 交叉率
-OPTIMIZER_GENETIC_SELECTION_PRESSURE = 1.5 # 选择压力
-OPTIMIZER_GENETIC_LEARNING_RATE = 0.01   # 学习率
+# 遗传算法优化器参数 - 基于调优结果
+OPTIMIZER_GENETIC_POPULATION_SIZE = 60   # 种群大小 (population_size: 60)
+OPTIMIZER_GENETIC_MUTATION_RATE = 0.03   # 变异率 (mutation_rate: 0.03)
+OPTIMIZER_GENETIC_CROSSOVER_RATE = 0.85   # 交叉率 (保持不变)
+OPTIMIZER_GENETIC_SELECTION_PRESSURE = 1.4 # 选择压力 (保持不变)
+OPTIMIZER_GENETIC_LEARNING_RATE = 0.02   # 学习率 (保持不变)
 
 # SGD优化器参数(保留以便切换回去)
 OPTIMIZER_SGD_MOMENTUM = 0.9       # SGD优化器动量参数
@@ -162,7 +184,7 @@ PRETRAINED_MODEL_PATH = get_abs_path(os.path.join(MODELS_BASE_DIR, f'{MODEL_FILE
 # 自定义模型路径（允许用户指定具体的模型文件路径）
 # 如果设置为None，将按照预定义路径顺序尝试查找模型
 # 如果设置为具体路径，将直接使用该路径加载模型
-CUSTOM_MODEL_PATH = r"C:\0_code\new_osp\models\best_pinn_model.h5"
+CUSTOM_MODEL_PATH = r"C:\0_code\new_osp\models\best_tuned_model.h5"
 
 # 预定义的模型文件备选列表
 # .h5格式模型文件（优先）

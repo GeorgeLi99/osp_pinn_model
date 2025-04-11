@@ -49,6 +49,8 @@ import matplotlib.pyplot as plt
 from keras.utils import plot_model
 from loss_pinn import *
 from sklearn.model_selection import KFold
+
+# DenseNet导入已移除
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 
 # [注意：已移除特征屏蔽层，所有输入特征都直接用于网络的训练]
@@ -138,25 +140,118 @@ logs_dir = os.path.join(models_dir, 'logs')
 if not os.path.exists(logs_dir):
     os.makedirs(logs_dir)
 
+# 定义残差模块类
+class ResidualBlock(tf.keras.layers.Layer):
+    """残差模块，增强模型对复杂函数的表达能力"""
+    
+    def __init__(self, units, activation='relu', dropout_rate=0.1, kernel_initializer=None, 
+                 name=None, trainable=True, dtype=None, **kwargs):
+        # 接受Keras标准参数，包括'trainable'和'dtype'
+        super(ResidualBlock, self).__init__(name=name, trainable=trainable, dtype=dtype, **kwargs)
+        self.units = units
+        self.activation = activation
+        self.dropout_rate = dropout_rate
+        self.kernel_initializer = kernel_initializer
+        
+        # 定义层
+        self.dense1 = None  # 在build中初始化，以便访问输入尺寸
+        self.dense2 = None
+        self.activation_layer1 = None
+        self.activation_layer2 = None
+        self.dropout_layer = None
+        self.add_layer = None
+        self.bn1 = None
+        self.bn2 = None
+        self.shortcut = None
+        
+    def build(self, input_shape):
+        input_dim = input_shape[-1]
+        
+        # 处理初始化器 - 确保它是一个字符串类型或已实例化的初始化器
+        if isinstance(self.kernel_initializer, str):
+            # 如果是字符串，直接使用
+            initializer = self.kernel_initializer
+        elif self.kernel_initializer == 'random_normal' or (hasattr(self.kernel_initializer, '__name__') and self.kernel_initializer.__name__ == 'RandomNormal'):
+            # 使用MODEL_WEIGHT_INIT_MEAN和MODEL_WEIGHT_INIT_STDDEV定义的值
+            initializer = 'random_normal'  # 简单字符串，可序列化
+        else:
+            # 默认使用he_normal
+            initializer = 'he_normal'
+        
+        # 初始化各层
+        self.dense1 = tf.keras.layers.Dense(
+            self.units, 
+            kernel_initializer=initializer
+        )
+        self.dense2 = tf.keras.layers.Dense(
+            input_dim,  # 输出尺寸与输入匹配，以便于残差连接
+            kernel_initializer=initializer
+        )
+        self.activation_layer1 = tf.keras.layers.Activation(self.activation)
+        self.activation_layer2 = tf.keras.layers.Activation(self.activation)
+        self.dropout_layer = tf.keras.layers.Dropout(self.dropout_rate)
+        self.add_layer = tf.keras.layers.Add()
+        self.bn1 = tf.keras.layers.BatchNormalization()
+        self.bn2 = tf.keras.layers.BatchNormalization()
+        
+        # 如果输入尺寸与中间层尺寸不同，添加快捷连接映射
+        if input_dim != self.units:
+            self.shortcut = tf.keras.layers.Dense(
+                self.units,
+                kernel_initializer=initializer
+            )
+        
+        super(ResidualBlock, self).build(input_shape)
+        
+    def call(self, inputs, training=False):
+        # 保存原始输入用于残差连接
+        shortcut = inputs
+        
+        # 转换分支
+        x = self.dense1(inputs)
+        x = self.bn1(x, training=training)
+        x = self.activation_layer1(x)
+        x = self.dropout_layer(x, training=training)
+        
+        # 映射回原始尺寸
+        x = self.dense2(x)
+        x = self.bn2(x, training=training)
+        
+        # 应用残差连接
+        x = self.add_layer([x, shortcut])
+        x = self.activation_layer2(x)
+        
+        return x
+        
+    def get_config(self):
+        """返回层的配置，支持模型序列化"""
+        config = super().get_config()
+        
+        # 处理kernel_initializer以确保可序列化
+        if isinstance(self.kernel_initializer, str):
+            kernel_init = self.kernel_initializer
+        elif hasattr(self.kernel_initializer, '__name__') and self.kernel_initializer.__name__ == 'RandomNormal':
+            kernel_init = 'random_normal'
+        else:
+            # 备选，使用通用的初始化器
+            kernel_init = 'he_normal'
+            
+        config.update({
+            "units": self.units,
+            "activation": self.activation,
+            "dropout_rate": self.dropout_rate,
+            "kernel_initializer": kernel_init,
+        })
+        return config
+
 # K折交叉验证函数
 def create_and_train_model():
-    """创建和编译PINN模型"""
-    # 创建物理信息神经网络模型
-    model = tf.keras.models.Sequential()
-    
-    # 添加输入层
-    model.add(layers.InputLayer(input_shape=MODEL_INPUT_SHAPE))
-    
-    # 注意：移除了特征屏蔽层，现在所有特征（包括前三个折射率特征）都将被使用
-    # 移除了BatchNormalization层，保留原始权重值
-    
-    # 添加调试层（仅在训练时打印）
-    model.add(DebugLayer(layer_name="input_features"))
-    
-    # 添加第一层，使用配置文件中的初始化参数并验证
-    print(f"\n权重初始化参数: mean={MODEL_WEIGHT_INIT_MEAN}, stddev={MODEL_WEIGHT_INIT_STDDEV}")
+    """创建和编译带有残差连接的PINN模型"""
+    # 创建物理信息神经网络模型 - 改用Functional API
     
     # 确保使用正确的初始化器
+    print(f"\n权重初始化参数: mean={MODEL_WEIGHT_INIT_MEAN}, stddev={MODEL_WEIGHT_INIT_STDDEV}")
+    
     if MODEL_KERNEL_INITIALIZER == 'random_normal':
         initializer = tf.keras.initializers.RandomNormal(
             mean=MODEL_WEIGHT_INIT_MEAN, 
@@ -167,31 +262,80 @@ def create_and_train_model():
         initializer = MODEL_KERNEL_INITIALIZER
         print(f"使用默认初始化器: {MODEL_KERNEL_INITIALIZER}")
     
-    # 添加第一层
-    dense1 = layers.Dense(
-        MODEL_FIRST_LAYER_UNITS, 
+    # 使用Functional API实现模型
+    inputs = tf.keras.layers.Input(shape=MODEL_INPUT_SHAPE, name="input_layer")
+    
+    # 添加调试层（仅在训练时打印）
+    x = DebugLayer(layer_name="input_features")(inputs)
+    
+    # 使用简单的5层全连接网络架构
+    print("\n使用简单的5层全连接网络")
+    
+    # 第一层
+    x = layers.Dense(
+        MODEL_LAYER1_UNITS, 
         kernel_initializer=initializer,
         use_bias=True,
-        name="dense_layer1_weighted"
-    )
-    model.add(dense1)
+        name="dense_layer1"
+    )(x)
+    x = layers.BatchNormalization(name="batch_norm1")(x)
+    x = layers.Activation(MODEL_LAYER1_ACTIVATION, name="activation1")(x)
+    x = layers.Dropout(MODEL_LAYER1_DROPOUT, name="dropout1")(x)
     
-    # 继续添加其他层 (移除了BatchNormalization)
-    model.add(layers.Activation(MODEL_FIRST_ACTIVATION))
-    model.add(layers.Dropout(MODEL_FIRST_DROPOUT))
+    # 第二层
+    x = layers.Dense(
+        MODEL_LAYER2_UNITS, 
+        kernel_initializer=initializer,
+        use_bias=True,
+        name="dense_layer2"
+    )(x)
+    x = layers.BatchNormalization(name="batch_norm2")(x)
+    x = layers.Activation(MODEL_LAYER2_ACTIVATION, name="activation2")(x)
+    x = layers.Dropout(MODEL_LAYER2_DROPOUT, name="dropout2")(x)
     
-    # 第二层，使用配置文件中的初始化参数
-    model.add(layers.Dense(MODEL_SECOND_LAYER_UNITS, 
-                         kernel_initializer=initializer, 
-                         use_bias=True))
-    # 移除了BatchNormalization层
-    model.add(layers.Activation(MODEL_SECOND_ACTIVATION))
-    model.add(layers.Dropout(MODEL_SECOND_DROPOUT))
+    # 第三层
+    x = layers.Dense(
+        MODEL_LAYER3_UNITS, 
+        kernel_initializer=initializer,
+        use_bias=True,
+        name="dense_layer3"
+    )(x)
+    x = layers.BatchNormalization(name="batch_norm3")(x)
+    x = layers.Activation(MODEL_LAYER3_ACTIVATION, name="activation3")(x)
+    x = layers.Dropout(MODEL_LAYER3_DROPOUT, name="dropout3")(x)
     
-    # 输出层，使用配置文件中的初始化参数
-    model.add(layers.Dense(MODEL_OUTPUT_UNITS, 
-                         activation=MODEL_OUTPUT_ACTIVATION, 
-                         kernel_initializer=initializer))
+    # 第四层
+    x = layers.Dense(
+        MODEL_LAYER4_UNITS, 
+        kernel_initializer=initializer,
+        use_bias=True,
+        name="dense_layer4"
+    )(x)
+    x = layers.BatchNormalization(name="batch_norm4")(x)
+    x = layers.Activation(MODEL_LAYER4_ACTIVATION, name="activation4")(x)
+    x = layers.Dropout(MODEL_LAYER4_DROPOUT, name="dropout4")(x)
+    
+    # 第五层
+    x = layers.Dense(
+        MODEL_LAYER5_UNITS, 
+        kernel_initializer=initializer,
+        use_bias=True,
+        name="dense_layer5"
+    )(x)
+    x = layers.BatchNormalization(name="batch_norm5")(x)
+    x = layers.Activation(MODEL_LAYER5_ACTIVATION, name="activation5")(x)
+    x = layers.Dropout(MODEL_LAYER5_DROPOUT, name="dropout5")(x)
+    
+    # 输出层
+    outputs = layers.Dense(
+        MODEL_OUTPUT_UNITS, 
+        activation=MODEL_OUTPUT_ACTIVATION, 
+        kernel_initializer=initializer,
+        name="output_layer"
+    )(x)
+    
+    # 创建模型 - 使用Functional API
+    model = tf.keras.Model(inputs=inputs, outputs=outputs, name="PINN_Residual_Model")
     
     # 根据配置选择损失函数
     if USE_PINN_LOSS:
@@ -863,16 +1007,36 @@ for train_idx, val_idx in kfold.split(all_inputs):
     fold_idx += 1
 
 # 加载最佳模型（而非使用deepcopy）
-# 添加SimpleGeneticOptimizer到custom_objects以确保模型加载时能识别
+# 添加自定义对象到custom_objects以确保模型加载时能识别
 custom_objects = {
-    # 已移除FeatureMaskingLayer
+    # 添加残差模块类
+    'ResidualBlock': ResidualBlock,
+    # 已移除FeatureMaskingLayer和DenseNet相关模块
     'SimpleGeneticOptimizer': SimpleGeneticOptimizer,
     # 为了兼容性，作为名称也添加
-    'GeneticOptimizer': SimpleGeneticOptimizer
+    'GeneticOptimizer': SimpleGeneticOptimizer,
+    # 添加调试层
+    'DebugLayer': DebugLayer,
+    # 添加物理信息损失函数
+    'PhysicsInformedLoss': PhysicsInformedLoss,
+    # 添加初始化器
+    'RandomNormal': tf.keras.initializers.RandomNormal
 }
-if os.path.exists(temp_best_model_path):
-    print(f"正在加载最佳模型（第{best_fold_idx}折）...")
-    best_model = tf.keras.models.load_model(temp_best_model_path, compile=False, custom_objects=custom_objects)
+# 安全加载模型或在失败时重新训练
+best_model = None
+
+try:
+    if os.path.exists(temp_best_model_path):
+        print(f"尝试加载最佳模型（第{best_fold_idx}折）...")
+        best_model = tf.keras.models.load_model(temp_best_model_path, compile=False, custom_objects=custom_objects)
+        print("模型加载成功!")
+except Exception as e:
+    print(f"模型加载失败: {e}")
+    print("将重新训练新模型，使用残差网络结构")
+    best_model = None
+
+# 如果无法加载模型，则创建新模型
+if best_model is None:
     # 重新编译模型
     if USE_PINN_LOSS:
         best_loss_function = PhysicsInformedLoss(physics_weight=PINN_PHYSICS_WEIGHT)
@@ -1030,16 +1194,39 @@ for i in range(num_folds):
         plt.grid(True)
 
 # 绘制平均训练/验证损失
-avg_train_loss = np.mean([np.array(hist) for hist in all_train_losses], axis=0)
-avg_val_loss = np.mean([np.array(hist) for hist in all_val_losses], axis=0)
+# 由于使用遗传算法优化器，不同折可能有不同的训练轨迹长度
+# 判断各折训练历史记录是否长度一致
+
+# 检查所有训练历史的长度
+print("\n各折训练历史长度:")
+for i, hist in enumerate(all_train_losses):
+    print(f"Fold {i+1}: {len(hist)}")
+    
+# 找到最短的训练历史长度
+min_length_train = min(len(hist) for hist in all_train_losses)
+min_length_val = min(len(hist) for hist in all_val_losses)
+print(f"\n使用最小共同长度进行平均: 训练={min_length_train}, 验证={min_length_val}")
+
+# 截断每个折的历史记录使其长度相同
+avg_train_loss = np.mean([np.array(hist[:min_length_train]) for hist in all_train_losses], axis=0)
+avg_val_loss = np.mean([np.array(hist[:min_length_val]) for hist in all_val_losses], axis=0)
 
 plt.subplot(2, 1, 1)
-epochs = range(1, len(avg_train_loss) + 1)
+epochs = range(1, min_length_train + 1)
 plt.plot(epochs, avg_train_loss, 'b-', linewidth=2, label='平均训练损失')
+plt.title('平均训练损失')
+plt.xlabel('Epoch')
+plt.ylabel('损失值')
+plt.grid(True)
 plt.legend()
 
 plt.subplot(2, 1, 2)
-plt.plot(epochs, avg_val_loss, 'r-', linewidth=2, label='平均验证损失')
+val_epochs = range(1, min_length_val + 1)
+plt.plot(val_epochs, avg_val_loss, 'r-', linewidth=2, label='平均验证损失')
+plt.title('平均验证损失')
+plt.xlabel('Epoch')
+plt.ylabel('损失值')
+plt.grid(True)
 plt.legend()
 
 plt.tight_layout()

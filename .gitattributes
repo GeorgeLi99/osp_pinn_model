@@ -1,0 +1,2 @@
+C:\0_code\new_osp\data\reflectance_data.zip filter=lfs diff=lfs merge=lfs -text
+data/reflectance_data.zip filter=lfs diff=lfs merge=lfs -text
