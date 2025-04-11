@@ -120,9 +120,24 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
     # 创建模型
     model = tf.keras.Model(inputs=inputs, outputs=outputs, name="Neural_Network_Model")
     
+    # 创建优化器对象
+    if isinstance(params['optimizer'], str):
+        if params['optimizer'] == 'adam':
+            optimizer = tf.keras.optimizers.Adam(learning_rate=params.get('initial_learning_rate', 0.01))
+        elif params['optimizer'] == 'sgd':
+            optimizer = tf.keras.optimizers.SGD(learning_rate=params.get('initial_learning_rate', 0.01))
+        elif params['optimizer'] == 'rmsprop':
+            optimizer = tf.keras.optimizers.RMSprop(learning_rate=params.get('initial_learning_rate', 0.01))
+        else:
+            print(f"Warning: Unknown optimizer string '{params['optimizer']}', falling back to Adam")
+            optimizer = tf.keras.optimizers.Adam(learning_rate=params.get('initial_learning_rate', 0.01))
+    else:
+        # 已经是优化器对象
+        optimizer = params['optimizer']
+    
     # 编译模型
     model.compile(
-        optimizer=params['optimizer'],
+        optimizer=optimizer,
         loss=params['loss'],
         metrics=params['metrics']
     )
@@ -162,9 +177,16 @@ class SimulatedAnnealingLearningRateScheduler(Callback):
     def on_epoch_begin(self, epoch, logs=None):
         # 为第一个周期设置初始学习率
         if epoch == 0:
-            tf.keras.backend.set_value(self.model.optimizer.learning_rate, self.initial_lr)
-            print(f"Initial learning rate: {self.initial_lr}")
-            self.current_lr = self.initial_lr
+            # 检查优化器类型并安全地设置学习率
+            try:
+                if hasattr(self.model.optimizer, 'learning_rate'):
+                    tf.keras.backend.set_value(self.model.optimizer.learning_rate, self.initial_lr)
+                    print(f"Initial learning rate: {self.initial_lr}")
+                    self.current_lr = self.initial_lr
+                else:
+                    print("Warning: Optimizer does not have a learning_rate attribute. Unable to adjust learning rate.")
+            except Exception as e:
+                print(f"Warning: Unable to set initial learning rate: {e}")
             return
         
         # 逐渐减小温度(学习率)
@@ -180,10 +202,16 @@ class SimulatedAnnealingLearningRateScheduler(Callback):
         # 保证学习率不低于最小值
         new_lr = max(self.min_lr, new_lr)
         
-        # 更新学习率
-        tf.keras.backend.set_value(self.model.optimizer.learning_rate, new_lr)
-        self.current_lr = new_lr
-        print(f"Epoch {epoch}: Learning rate set to {new_lr:.6f}")
+        # 安全地更新学习率
+        try:
+            if hasattr(self.model.optimizer, 'learning_rate'):
+                tf.keras.backend.set_value(self.model.optimizer.learning_rate, new_lr)
+                self.current_lr = new_lr
+                print(f"Epoch {epoch}: Learning rate set to {new_lr:.6f}")
+            else:
+                print("Warning: Optimizer does not have a learning_rate attribute. Unable to adjust learning rate.")
+        except Exception as e:
+            print(f"Warning: Unable to update learning rate: {e}")
 
 def train_model(model, X_train, y_train, validation_data=None, params=None):
     """训练模型并返回训练历史
