@@ -22,8 +22,15 @@ MODEL_FILENAME = 'simple_linear_model.h5'
 MODEL_PARAMS = {
     'input_shape': (6,),        # 输入特征维度
     'output_units': 1,          # 输出维度
-    'hidden_layers': [48, 24],  # 隐藏层神经元数量
-    'hidden_activation': 'relu',# 隐藏层激活函数
+    # 25层神经网络，每层神经元数量逐渐递减
+    'hidden_layers': [
+        32, 30, 28, 26, 24,     # 前5层
+        22, 20, 18, 16, 15,     # 中间5层
+        14, 13, 12, 11, 10,     # 中间5层
+        9, 8, 7, 6, 5,          # 中间5层
+        4, 4, 4, 4, 4           # 后5层
+    ],  
+    'hidden_activation': 'relu',# 所有隐藏层使用ReLU激活函数
     'output_activation': 'tanh',# 输出层激活函数
     'initializer': 'he_normal', # 权重初始化方法
     'loss': 'mse',              # 损失函数 (均方误差)
@@ -33,8 +40,8 @@ MODEL_PARAMS = {
 
 # 训练配置
 TRAIN_PARAMS = {
-    'epochs': 15,               # 训练轮数
-    'batch_size': 32,           # 批量大小
+    'epochs': 30,               # 增加训练轮数，因为网络更深
+    'batch_size': 64,           # 增大批量大小加快训练
     'validation_split': 0.2,    # 验证集比例
     'verbose': 1                # 显示详细程度
 }
@@ -206,16 +213,13 @@ def predict_and_visualize(model, X_test, y_test=None, params=None):
     
     # 如果有测试标签，计算指标并可视化
     if y_test is not None:
-        # 因为使用了tanh激活函数，输出范围是[-1,1]，而我们的数据在[0,1]范围
-        # 只有在进行评估时才需要转换，不修改原始预测值
-        y_pred_scaled = (y_pred + 1) / 2  # 将[-1,1]转换为[0,1]
-        
+        # 直接使用原始预测值进行评估，不做tanh输出适配
         # 评估预测性能
-        evaluate_predictions(y_test, y_pred_scaled, name="Test Set")
+        evaluate_predictions(y_test, y_pred, name="Test Set")
         
         # 创建真实值与预测值的散点图
         plt.figure(figsize=params['scatter_figsize'])
-        plt.scatter(y_test, y_pred_scaled, alpha=0.5)
+        plt.scatter(y_test, y_pred, alpha=0.5)
         plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
         plt.xlabel('True Values')
         plt.ylabel('Predicted Values')
@@ -229,7 +233,7 @@ def predict_and_visualize(model, X_test, y_test=None, params=None):
         # 创建值分布直方图
         plt.figure(figsize=params['hist_figsize'])
         plt.hist(y_test, bins=params['hist_bins'], alpha=0.7, label='True Values', color='blue')
-        plt.hist(y_pred_scaled, bins=params['hist_bins'], alpha=0.5, label='Predicted Values', color='orange')
+        plt.hist(y_pred, bins=params['hist_bins'], alpha=0.5, label='Predicted Values', color='orange')
         plt.xlabel('Value')
         plt.ylabel('Frequency')
         plt.title('Distribution of True and Predicted Values')
