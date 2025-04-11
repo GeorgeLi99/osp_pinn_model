@@ -9,9 +9,7 @@ import numpy as np
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
-import random
-import math
-from tensorflow.keras.callbacks import Callback, ModelCheckpoint
+from tensorflow.keras.callbacks import ModelCheckpoint
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 # ====================== 配置参数 ======================
@@ -43,14 +41,10 @@ MODEL_PARAMS = {
 
 # 训练配置
 TRAIN_PARAMS = {
-    'epochs': 30,               # 增加训练轮数，因为网络更深
-    'batch_size': 64,           # 增大批量大小加快训练
+    'epochs': 30,               # 训练轮数
+    'batch_size': 64,           # 批量大小
     'validation_split': 0.2,    # 验证集比例
-    'verbose': 1,               # 显示详细程度
-    'initial_learning_rate': 0.01,  # 初始学习率
-    'min_learning_rate': 1e-6,      # 最小学习率
-    'cooling_rate': 0.95,           # 模拟退火率冷却率
-    'temperature_increase_prob': 0.1  # 温度偏移的概率
+    'verbose': 1                # 显示详细程度
 }
 
 # 可视化配置
@@ -120,24 +114,9 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
     # 创建模型
     model = tf.keras.Model(inputs=inputs, outputs=outputs, name="Neural_Network_Model")
     
-    # 创建优化器对象
-    if isinstance(params['optimizer'], str):
-        if params['optimizer'] == 'adam':
-            optimizer = tf.keras.optimizers.Adam(learning_rate=params.get('initial_learning_rate', 0.01))
-        elif params['optimizer'] == 'sgd':
-            optimizer = tf.keras.optimizers.SGD(learning_rate=params.get('initial_learning_rate', 0.01))
-        elif params['optimizer'] == 'rmsprop':
-            optimizer = tf.keras.optimizers.RMSprop(learning_rate=params.get('initial_learning_rate', 0.01))
-        else:
-            print(f"Warning: Unknown optimizer string '{params['optimizer']}', falling back to Adam")
-            optimizer = tf.keras.optimizers.Adam(learning_rate=params.get('initial_learning_rate', 0.01))
-    else:
-        # 已经是优化器对象
-        optimizer = params['optimizer']
-    
     # 编译模型
     model.compile(
-        optimizer=optimizer,
+        optimizer=params['optimizer'],
         loss=params['loss'],
         metrics=params['metrics']
     )
@@ -157,61 +136,7 @@ def load_data(data_path):
     
     return X, y
 
-# 模拟退火学习率调度器
-class SimulatedAnnealingLearningRateScheduler(Callback):
-    """基于模拟退火算法的学习率调度器
-    
-    模拟退火算法如金属冷却过程：
-    1. 初始高温度(高学习率)允许大范围探索
-    2. 随着温度降低(学习率减小)，参数更新变得更精细
-    3. 偏移机制允许随机升高温度，帮助跳出局部最优解
-    """
-    def __init__(self, initial_lr=0.01, min_lr=1e-6, cooling_rate=0.95, temp_increase_prob=0.1):
-        super(SimulatedAnnealingLearningRateScheduler, self).__init__()
-        self.initial_lr = initial_lr  # 初始学习率(初始温度)
-        self.min_lr = min_lr          # 最小学习率
-        self.cooling_rate = cooling_rate  # 冷却率
-        self.temp_increase_prob = temp_increase_prob  # 升温概率
-        self.current_lr = initial_lr  # 当前学习率
-    
-    def on_epoch_begin(self, epoch, logs=None):
-        # 为第一个周期设置初始学习率
-        if epoch == 0:
-            # 检查优化器类型并安全地设置学习率
-            try:
-                if hasattr(self.model.optimizer, 'learning_rate'):
-                    tf.keras.backend.set_value(self.model.optimizer.learning_rate, self.initial_lr)
-                    print(f"Initial learning rate: {self.initial_lr}")
-                    self.current_lr = self.initial_lr
-                else:
-                    print("Warning: Optimizer does not have a learning_rate attribute. Unable to adjust learning rate.")
-            except Exception as e:
-                print(f"Warning: Unable to set initial learning rate: {e}")
-            return
-        
-        # 逐渐减小温度(学习率)
-        new_lr = self.current_lr * self.cooling_rate
-        
-        # 偏移机制: 有时增加温度帮助跳出局部最优解
-        if random.random() < self.temp_increase_prob:
-            # 添加温度偏移，最多增加30%
-            temperature_bump = 1 + random.random() * 0.3
-            new_lr = new_lr * temperature_bump
-            print(f"Epoch {epoch}: Temporarily increasing learning rate by factor of {temperature_bump:.2f}")
-        
-        # 保证学习率不低于最小值
-        new_lr = max(self.min_lr, new_lr)
-        
-        # 安全地更新学习率
-        try:
-            if hasattr(self.model.optimizer, 'learning_rate'):
-                tf.keras.backend.set_value(self.model.optimizer.learning_rate, new_lr)
-                self.current_lr = new_lr
-                print(f"Epoch {epoch}: Learning rate set to {new_lr:.6f}")
-            else:
-                print("Warning: Optimizer does not have a learning_rate attribute. Unable to adjust learning rate.")
-        except Exception as e:
-            print(f"Warning: Unable to update learning rate: {e}")
+
 
 def train_model(model, X_train, y_train, validation_data=None, params=None):
     """训练模型并返回训练历史
@@ -243,14 +168,6 @@ def train_model(model, X_train, y_train, validation_data=None, params=None):
         verbose=0
     )
     
-    # 创建模拟退火学习率调度器
-    lr_scheduler = SimulatedAnnealingLearningRateScheduler(
-        initial_lr=params.get('initial_learning_rate', 0.01),
-        min_lr=params.get('min_learning_rate', 1e-6),
-        cooling_rate=params.get('cooling_rate', 0.95),
-        temp_increase_prob=params.get('temperature_increase_prob', 0.1)
-    )
-    
     # 训练模型
     history = model.fit(
         X_train, y_train,
@@ -258,7 +175,7 @@ def train_model(model, X_train, y_train, validation_data=None, params=None):
         batch_size=params['batch_size'],
         validation_data=validation_data,
         verbose=params['verbose'],
-        callbacks=[checkpoint, lr_scheduler]
+        callbacks=[checkpoint]
     )
     
     # 加载最佳模型
