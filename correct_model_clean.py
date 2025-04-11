@@ -9,6 +9,9 @@ import numpy as np
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
+import random
+import math
+from tensorflow.keras.callbacks import Callback, ModelCheckpoint
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 # ====================== 配置参数 ======================
@@ -43,7 +46,11 @@ TRAIN_PARAMS = {
     'epochs': 30,               # 增加训练轮数，因为网络更深
     'batch_size': 64,           # 增大批量大小加快训练
     'validation_split': 0.2,    # 验证集比例
-    'verbose': 1                # 显示详细程度
+    'verbose': 1,               # 显示详细程度
+    'initial_learning_rate': 0.01,  # 初始学习率
+    'min_learning_rate': 1e-6,      # 最小学习率
+    'cooling_rate': 0.95,           # 模拟退火率冷却率
+    'temperature_increase_prob': 0.1  # 温度偏移的概率
 }
 
 # 可视化配置
@@ -135,6 +142,49 @@ def load_data(data_path):
     
     return X, y
 
+# 模拟退火学习率调度器
+class SimulatedAnnealingLearningRateScheduler(Callback):
+    """基于模拟退火算法的学习率调度器
+    
+    模拟退火算法如金属冷却过程：
+    1. 初始高温度(高学习率)允许大范围探索
+    2. 随着温度降低(学习率减小)，参数更新变得更精细
+    3. 偏移机制允许随机升高温度，帮助跳出局部最优解
+    """
+    def __init__(self, initial_lr=0.01, min_lr=1e-6, cooling_rate=0.95, temp_increase_prob=0.1):
+        super(SimulatedAnnealingLearningRateScheduler, self).__init__()
+        self.initial_lr = initial_lr  # 初始学习率(初始温度)
+        self.min_lr = min_lr          # 最小学习率
+        self.cooling_rate = cooling_rate  # 冷却率
+        self.temp_increase_prob = temp_increase_prob  # 升温概率
+        self.current_lr = initial_lr  # 当前学习率
+    
+    def on_epoch_begin(self, epoch, logs=None):
+        # 为第一个周期设置初始学习率
+        if epoch == 0:
+            tf.keras.backend.set_value(self.model.optimizer.learning_rate, self.initial_lr)
+            print(f"Initial learning rate: {self.initial_lr}")
+            self.current_lr = self.initial_lr
+            return
+        
+        # 逐渐减小温度(学习率)
+        new_lr = self.current_lr * self.cooling_rate
+        
+        # 偏移机制: 有时增加温度帮助跳出局部最优解
+        if random.random() < self.temp_increase_prob:
+            # 添加温度偏移，最多增加30%
+            temperature_bump = 1 + random.random() * 0.3
+            new_lr = new_lr * temperature_bump
+            print(f"Epoch {epoch}: Temporarily increasing learning rate by factor of {temperature_bump:.2f}")
+        
+        # 保证学习率不低于最小值
+        new_lr = max(self.min_lr, new_lr)
+        
+        # 更新学习率
+        tf.keras.backend.set_value(self.model.optimizer.learning_rate, new_lr)
+        self.current_lr = new_lr
+        print(f"Epoch {epoch}: Learning rate set to {new_lr:.6f}")
+
 def train_model(model, X_train, y_train, validation_data=None, params=None):
     """训练模型并返回训练历史
     
@@ -153,22 +203,99 @@ def train_model(model, X_train, y_train, validation_data=None, params=None):
         params = TRAIN_PARAMS
     
     print("\nStarting model training...")
+    
+    # 设置检查点，保存最佳模型
+    os.makedirs(MODEL_SAVE_DIR, exist_ok=True)
+    checkpoint_path = os.path.join(MODEL_SAVE_DIR, 'checkpoint_best_model.h5')
+    checkpoint = ModelCheckpoint(
+        checkpoint_path, 
+        monitor='val_loss', 
+        save_best_only=True, 
+        mode='min', 
+        verbose=0
+    )
+    
+    # 创建模拟退火学习率调度器
+    lr_scheduler = SimulatedAnnealingLearningRateScheduler(
+        initial_lr=params.get('initial_learning_rate', 0.01),
+        min_lr=params.get('min_learning_rate', 1e-6),
+        cooling_rate=params.get('cooling_rate', 0.95),
+        temp_increase_prob=params.get('temperature_increase_prob', 0.1)
+    )
+    
+    # 训练模型
     history = model.fit(
         X_train, y_train,
         epochs=params['epochs'],
         batch_size=params['batch_size'],
         validation_data=validation_data,
-        verbose=params['verbose']
+        verbose=params['verbose'],
+        callbacks=[checkpoint, lr_scheduler]
     )
     
-    # 保存模型
+    # 加载最佳模型
+    if os.path.exists(checkpoint_path):
+        model.load_weights(checkpoint_path)
+        print("Loaded weights from best model checkpoint")
+    
+    # 保存最终模型
     model_path = os.path.join(MODEL_SAVE_DIR, MODEL_FILENAME)
     model.save(model_path)
     print(f"\nModel saved to: {model_path}")
     
+    # 可视化训练历史
+    plot_training_history(history)
+    
     return history
 
 # Evaluate model prediction results
+def plot_training_history(history):
+    """可视化训练过程中的损失值和评估指标变化
+    
+    Args:
+        history: 模型训练返回的历史对象
+    """
+    # 创建结果目录（如果不存在）
+    os.makedirs(RESULTS_SAVE_DIR, exist_ok=True)
+    
+    # 绘制训练和验证损失值曲线
+    plt.figure(figsize=(10, 6))
+    plt.plot(history.history['loss'], label='Training Loss')
+    if 'val_loss' in history.history:
+        plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title('Model Loss During Training')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.legend(loc='upper right')
+    plt.grid(True)
+    
+    # 保存图表
+    loss_plot_path = os.path.join(RESULTS_SAVE_DIR, 'loss_history.png')
+    plt.savefig(loss_plot_path)
+    plt.close()
+    print(f"\nLoss history plot saved to: {loss_plot_path}")
+    
+    # 如果有其他指标，也绘制出来
+    # 检查是否有评估指标如MAE
+    metrics = [m for m in history.history.keys() if not m.startswith('val_') and m != 'loss']
+    if metrics:
+        plt.figure(figsize=(10, 6))
+        for metric in metrics:
+            plt.plot(history.history[metric], label=f'Training {metric.upper()}')
+            if f'val_{metric}' in history.history:
+                plt.plot(history.history[f'val_{metric}'], label=f'Validation {metric.upper()}')
+        plt.title('Model Metrics During Training')
+        plt.ylabel('Value')
+        plt.xlabel('Epoch')
+        plt.legend(loc='upper right')
+        plt.grid(True)
+        
+        # 保存图表
+        metrics_plot_path = os.path.join(RESULTS_SAVE_DIR, 'metrics_history.png')
+        plt.savefig(metrics_plot_path)
+        plt.close()
+        print(f"Metrics history plot saved to: {metrics_plot_path}")
+
 def evaluate_predictions(y_true, y_pred, name=""):
     """Calculate and print prediction evaluation metrics"""
     # Calculate various evaluation metrics
