@@ -20,8 +20,8 @@ from model_visualizer import visualize_model_structure
 
 # ====================== 配置参数 ======================
 # 路径配置
-DEFAULT_DATA_PATH = r'C:\0_code\new_osp\data\triple_film_sweep_with_n_results_1.csv'
-TEST_DATA_PATH = r'C:\0_code\new_osp\data\triple_film_sweep_with_n_results.csv'
+DEFAULT_DATA_PATH = r'C:\0_code\new_osp\data\reflectance_data_fixed.csv'
+TEST_DATA_PATH = r'C:\0_code\new_osp\data\reflectance_data_fixed.csv'
 MODEL_SAVE_DIR = 'models'
 RESULTS_SAVE_DIR = 'results'
 LOGS_DIR = os.path.join('logs', 'fit')
