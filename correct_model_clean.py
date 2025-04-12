@@ -10,7 +10,7 @@ import pandas as pd
 import os
 import matplotlib.pyplot as plt
 import datetime
-from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, ReduceLROnPlateau
 from tensorflow.keras.layers import Dense, Input, BatchNormalization
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
@@ -47,10 +47,10 @@ MODEL_PARAMS = {
 
 # 训练配置
 TRAIN_PARAMS = {
-    'epochs': 20,            # 训练轮数
-    'batch_size': 64,           # 批量大小
+    'epochs': 60,            # 训练轮数
+    'batch_size': 32,           # 批量大小
     'validation_split': 0.2,    # 验证集比例
-    'verbose': 1                # 显示详细程度
+    'verbose': 2                # 显示详细程度 (每个epoch一行)
 }
 
 # 可视化配置
@@ -275,11 +275,22 @@ def train_model(model, X_train, y_train, validation_data=None, params=None):
     print("启动TensorBoard: tensorboard --logdir=logs/fit")
     print("可视化更多指标: 在TensorBoard界面中切换到'SCALARS'、'HISTOGRAMS'、'GRAPHS'等选项卡")
     
+    # 创建学习率调度器 - 当验证指标停止改善时自动降低学习率
+    reduce_lr = ReduceLROnPlateau(
+        monitor='val_loss',       # 监控验证集上的损失
+        factor=0.2,              # 学习率降低倍数（即降低到原来的0.2倍）
+        patience=5,              # 5个epoch没有改善就降低学习率
+        min_lr=1e-6,             # 学习率下限
+        cooldown=0,              # 冷却期，在这个周期内不会再降低学习率
+        verbose=1                # 显示降低学习率的消息
+    )
+    
     # 初始化回调列表
     callbacks = [
         checkpoint, 
         tensorboard_callback,
-        LRTensorBoard()
+        LRTensorBoard(),
+        reduce_lr               # 添加学习率调度器
     ]
     
     # 如果有验证数据，添加预测可视化回调
@@ -323,22 +334,88 @@ def plot_training_history(history):
     # 创建结果目录（如果不存在）
     os.makedirs(RESULTS_SAVE_DIR, exist_ok=True)
     
-    # 绘制训练和验证损失值曲线
-    plt.figure(figsize=(10, 6))
-    plt.plot(history.history['loss'], label='Training Loss')
-    if 'val_loss' in history.history:
-        plt.plot(history.history['val_loss'], label='Validation Loss')
-    plt.title('Model Loss During Training')
+    # 绘制训练和验证损失值曲线 - 分两个图，一个显示全范围，一个显示缩放的范围
+    
+    # 准备绘图数据
+    train_loss = history.history['loss']
+    val_loss = history.history.get('val_loss', None)
+    epochs = range(1, len(train_loss) + 1)
+    
+    # --------- 第一幅图: 对近期的损失值进行缩放处理 ---------
+    plt.figure(figsize=(12, 10))
+    
+    # 创建两个子图，上面一个显示全部范围
+    plt.subplot(2, 1, 1)
+    plt.plot(epochs, train_loss, 'b-', label='Training Loss')
+    if val_loss:
+        plt.plot(epochs, val_loss, 'r-', label='Validation Loss')
+    plt.title('Model Loss - Full Range')
+    plt.ylabel('Loss')
+    plt.grid(True)
+    plt.legend(loc='upper right')
+    
+    # 下面的子图显示缩放后的范围，聚焦于小值
+    plt.subplot(2, 1, 2)
+    plt.plot(epochs, train_loss, 'b-', label='Training Loss')
+    if val_loss:
+        plt.plot(epochs, val_loss, 'r-', label='Validation Loss')
+        
+    # 计算后半段损失值的范围，更聚焦于训练后期
+    # 使用训练后半段数据来计算缩放范围
+    half_point = len(train_loss) // 2
+    recent_train_loss = train_loss[half_point:]
+    
+    if val_loss:
+        recent_val_loss = val_loss[half_point:]
+        # 结合两个损失数据计算最适y轴范围
+        all_recent_losses = recent_train_loss + recent_val_loss
+    else:
+        all_recent_losses = recent_train_loss
+    
+    if all_recent_losses:
+        # 计算合适的y轴下限（缩小范围）
+        min_loss = min(all_recent_losses)
+        # 计算上限：使用最近95%百分位的值或者下回到后半段的最大值
+        p95 = sorted(all_recent_losses)[int(len(all_recent_losses) * 0.95)]
+        max_loss = min(max(all_recent_losses), p95 * 1.5)
+        
+        # 稍微扩大一点范围以便观察
+        y_min = max(0, min_loss * 0.8)  # 确保下限不低于0
+        y_max = max_loss * 1.2
+        
+        # 设置y轴范围
+        plt.ylim(y_min, y_max)
+    
+    plt.title('Model Loss - Zoomed View (Focus on Later Epochs)')
     plt.ylabel('Loss')
     plt.xlabel('Epoch')
-    plt.legend(loc='upper right')
     plt.grid(True)
+    plt.legend(loc='upper right')
     
-    # 保存图表
+    plt.tight_layout()
+    
+    # 保存详细视图图表
     loss_plot_path = os.path.join(RESULTS_SAVE_DIR, 'loss_history.png')
-    plt.savefig(loss_plot_path)
+    plt.savefig(loss_plot_path, dpi=300)
     plt.close()
-    print(f"\nLoss history plot saved to: {loss_plot_path}")
+    
+    # --------- 第二幅图: 增加对数尺度图 ---------
+    plt.figure(figsize=(10, 6))
+    plt.semilogy(epochs, train_loss, 'b-', label='Training Loss')
+    if val_loss:
+        plt.semilogy(epochs, val_loss, 'r-', label='Validation Loss')
+    plt.title('Model Loss During Training (Log Scale)')
+    plt.ylabel('Loss (log scale)')
+    plt.xlabel('Epoch')
+    plt.legend(loc='upper right')
+    plt.grid(True, which="both", ls="-")
+    
+    # 保存对数尺度图表
+    log_loss_plot_path = os.path.join(RESULTS_SAVE_DIR, 'loss_history_log_scale.png')
+    plt.savefig(log_loss_plot_path, dpi=300)
+    plt.close()
+    
+    print(f"\nLoss history plots saved to: \n1. {loss_plot_path} \n2. {log_loss_plot_path}")
     
     # 如果有其他指标，也绘制出来
     # 检查是否有评估指标如MAE
