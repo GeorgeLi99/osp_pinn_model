@@ -13,6 +13,9 @@ from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.layers import Dense, Input, BatchNormalization
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
+# 导入模型可视化模块
+from model_visualizer import visualize_model_structure
+
 # ====================== 配置参数 ======================
 # 路径配置
 DEFAULT_DATA_PATH = r'C:\0_code\new_osp\data\train_data.csv'
@@ -32,9 +35,9 @@ MODEL_PARAMS = {
         9, 8, 7, 6, 5,          # 中间5层
         4, 4, 4, 4, 4           # 后5层
     ],  
-    'hidden_activation': 'relu', # 所有隐藏层使用ReLU激活函数
+    'hidden_activation': tf.keras.layers.ELU(alpha=1.3), # 自定义ELU激活函数，alpha=1.3更适合深度网络
     'output_activation': 'linear', # 输出层使用线性激活函数
-    'initializer': 'he_normal', # 权重初始化方法，适合ReLU
+    'initializer': 'he_normal', # 权重初始化方法，适合ELU
     'loss': 'mse',              # 损失函数 (均方误差)
     'metrics': ['mae'],         # 评估指标 (平均绝对误差)
     'optimizer': 'adam'         # 优化器
@@ -42,7 +45,7 @@ MODEL_PARAMS = {
 
 # 训练配置
 TRAIN_PARAMS = {
-    'epochs': 50,            # 训练轮数
+    'epochs': 20,            # 训练轮数
     'batch_size': 64,           # 批量大小
     'validation_split': 0.2,    # 验证集比例
     'verbose': 1                # 显示详细程度
@@ -85,6 +88,9 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
     hidden_activation = params['hidden_activation']
     output_activation = params['output_activation']
     
+    # 检查激活函数类型
+    is_custom_activation = isinstance(hidden_activation, tf.keras.layers.Layer)
+    
     # 获取初始化器
     if params['initializer'] == 'he_normal':
         initializer = tf.keras.initializers.he_normal()
@@ -96,15 +102,28 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
     # 定义输入层
     inputs = tf.keras.layers.Input(shape=input_shape, name="input_layer")
     
-    # 构建隐藏层 - 直接使用ReLU激活函数，移除了BN层
+    # 构建隐藏层 - 使用自定义ELU激活函数
     x = inputs
     for i, units in enumerate(hidden_layers):
-        x = tf.keras.layers.Dense(
-            units,
-            activation=hidden_activation,  # 直接使用ReLU激活函数
-            kernel_initializer=initializer,
-            name=f"hidden_layer_{i+1}"
-        )(x)
+        # 根据激活函数类型处理
+        if is_custom_activation:
+            # 如果是自定义激活函数对象，先只用线性变换
+            x = tf.keras.layers.Dense(
+                units,
+                activation=None,  # 不使用激活函数
+                kernel_initializer=initializer,
+                name=f"hidden_layer_{i+1}"
+            )(x)
+            # 然后单独应用激活函数
+            x = hidden_activation(x)
+        else:
+            # 如果是字符串激活函数，直接在Dense层中使用
+            x = tf.keras.layers.Dense(
+                units,
+                activation=hidden_activation,
+                kernel_initializer=initializer,
+                name=f"hidden_layer_{i+1}"
+            )(x)
     
     # 输出层 - 使用线性激活函数
     outputs = tf.keras.layers.Dense(
@@ -350,6 +369,9 @@ def main(data_path=None):
     # Print model summary
     print("\nModel Summary:")
     model.summary()
+    
+    # 可视化模型结构
+    visualize_model_structure(model, save_path=os.path.join(RESULTS_SAVE_DIR, "model_structure.png"))
     
     # Print model output layer information
     print("\nModel Output Layer Information:")
