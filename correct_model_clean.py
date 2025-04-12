@@ -84,9 +84,9 @@ TRAIN_PARAMS = {
 LR_SCHEDULER_PARAMS = {
     'monitor': 'val_loss',       # 监控验证集上的损失
     'factor': 0.2,              # 学习率降低倍数（降低到原来的0.2倍）
-    'patience': 5,              # 5个epoch没有改善就降低学习率
+    'patience': 10,              # 10个epoch没有改善就降低学习率
     'min_lr': 1e-6,             # 学习率下限
-    'cooldown': 0,              # 冷却期
+    'cooldown': 1,              # 冷却期
     'verbose': 1                # 显示详细信息
 }
 
