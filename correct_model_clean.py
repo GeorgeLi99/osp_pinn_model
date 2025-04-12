@@ -9,7 +9,8 @@ import numpy as np
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
-from tensorflow.keras.callbacks import ModelCheckpoint
+import datetime
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 from tensorflow.keras.layers import Dense, Input, BatchNormalization
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
@@ -21,6 +22,7 @@ from model_visualizer import visualize_model_structure
 DEFAULT_DATA_PATH = r'C:\0_code\new_osp\data\train_data.csv'
 MODEL_SAVE_DIR = 'models'
 RESULTS_SAVE_DIR = 'results'
+LOGS_DIR = os.path.join('logs', 'fit')
 MODEL_FILENAME = 'simple_linear_model.h5'
 
 # 模型配置
@@ -61,6 +63,7 @@ VISUALIZATION_PARAMS = {
 # 创建必要的目录
 os.makedirs(MODEL_SAVE_DIR, exist_ok=True)
 os.makedirs(RESULTS_SAVE_DIR, exist_ok=True)
+os.makedirs(LOGS_DIR, exist_ok=True)
 
 # Create a model with two hidden layers (input -> hidden1 -> hidden2 -> output)
 def create_simple_model(input_shape=None, output_units=None, params=None):
@@ -190,6 +193,23 @@ def train_model(model, X_train, y_train, validation_data=None, params=None):
         verbose=0
     )
     
+    # 设置TensorBoard回调 - 使用简化版本避免文件访问错误
+    log_dir = os.path.join(LOGS_DIR, datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+    
+    # 确保日志目录存在且有读写权限
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # 使用基本配置，避免高级功能可能导致的文件访问错误
+    tensorboard_callback = TensorBoard(
+        log_dir=log_dir,
+        histogram_freq=1,         # 每个周期都计算直方图
+        write_graph=False,        # 不写入计算图
+        update_freq='epoch'       # 每个周期更新一次
+    )
+    
+    print(f"TensorBoard 日志目录: {log_dir}")
+    print("启动TensorBoard: tensorboard --logdir=logs/fit")
+    
     # 训练模型
     history = model.fit(
         X_train, y_train,
@@ -198,7 +218,7 @@ def train_model(model, X_train, y_train, validation_data=None, params=None):
         validation_data=validation_data,
         shuffle=True,
         verbose=params['verbose'],
-        callbacks=[checkpoint]
+        callbacks=[checkpoint, tensorboard_callback]
     )
     
     # 加载最佳模型
