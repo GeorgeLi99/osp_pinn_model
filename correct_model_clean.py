@@ -262,7 +262,7 @@ def evaluate_predictions(y_true, y_pred, name=""):
     
     return mse, rmse, mae, r2
 
-def predict_and_visualize(model, X_test, y_test=None, params=None):
+def predict_and_visualize(model, X_test, y_test=None, params=None, set_name="Test"):
     """使用模型进行预测并可视化结果
     
     Args:
@@ -270,6 +270,7 @@ def predict_and_visualize(model, X_test, y_test=None, params=None):
         X_test: 测试特征
         y_test: 测试标签，默认为None
         params: 可视化参数，默认使用全局配置
+        set_name: 数据集名称，用于文件名和图标题，默认为"Test"
         
     Returns:
         预测结果
@@ -279,7 +280,7 @@ def predict_and_visualize(model, X_test, y_test=None, params=None):
         params = VISUALIZATION_PARAMS
     
     # 进行预测
-    print("\nMaking predictions...")
+    print(f"\nMaking predictions for {set_name} Set...")
     start_time = pd.Timestamp.now()
     y_pred = model.predict(X_test)
     end_time = pd.Timestamp.now()
@@ -291,7 +292,7 @@ def predict_and_visualize(model, X_test, y_test=None, params=None):
     if y_test is not None:
         # 直接使用原始预测值进行评估，不做tanh输出适配
         # 评估预测性能
-        evaluate_predictions(y_test, y_pred, name="Test Set")
+        evaluate_predictions(y_test, y_pred, name=f"{set_name} Set")
         
         # 创建真实值与预测值的散点图
         plt.figure(figsize=params['scatter_figsize'])
@@ -299,9 +300,9 @@ def predict_and_visualize(model, X_test, y_test=None, params=None):
         plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
         plt.xlabel('True Values')
         plt.ylabel('Predicted Values')
-        plt.title('True vs Predicted Values')
+        plt.title(f'True vs Predicted Values ({set_name} Set)')
         plt.grid(True)
-        scatter_path = os.path.join(RESULTS_SAVE_DIR, 'predictions_scatter.png')
+        scatter_path = os.path.join(RESULTS_SAVE_DIR, f'predictions_scatter_{set_name.lower()}.png')
         plt.savefig(scatter_path)
         plt.close()
         print(f"Scatter plot saved to: {scatter_path}")
@@ -312,10 +313,10 @@ def predict_and_visualize(model, X_test, y_test=None, params=None):
         plt.hist(y_pred, bins=params['hist_bins'], alpha=0.5, label='Predicted Values', color='orange')
         plt.xlabel('Value')
         plt.ylabel('Frequency')
-        plt.title('Distribution of True and Predicted Values')
+        plt.title(f'Distribution of True and Predicted Values ({set_name} Set)')
         plt.legend()
         plt.grid(True)
-        hist_path = os.path.join(RESULTS_SAVE_DIR, 'error_histogram.png')
+        hist_path = os.path.join(RESULTS_SAVE_DIR, f'error_histogram_{set_name.lower()}.png')
         plt.savefig(hist_path)
         plt.close()
         print(f"Distribution histogram saved to: {hist_path}")
@@ -389,8 +390,23 @@ def main(data_path=None):
     plt.close()
     print(f"\nLoss history plot saved to: {loss_plot_path}")
     
-    # Predict and visualize results
-    y_pred = predict_and_visualize(model, X_test, y_test)
+    # 预测并可视化训练集结果
+    print("\n" + "-"*40)
+    print("Evaluating on Training Set:")
+    predict_and_visualize(model, X_train, y_train, set_name="Train")
+    
+    # 预测并可视化验证集结果
+    print("\n" + "-"*40)
+    print("Evaluating on Validation Set:")
+    predict_and_visualize(model, X_test, y_test, set_name="Validation")
+    
+    # 预测并可视化独立测试集结果
+    print("\n" + "-"*40)
+    print("Evaluating on External Test Set:")
+    test_data = pd.read_csv(r"C:\0_code\new_osp\data\test_data.csv")
+    X_test_data = test_data.iloc[:, :-1].values
+    y_test_data = test_data.iloc[:, -1].values
+    predict_and_visualize(model, X_test_data, y_test_data, set_name="Test")
     
     print("\nModel training and evaluation complete!")
     return model, history
