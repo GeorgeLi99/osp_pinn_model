@@ -10,6 +10,7 @@ import pandas as pd
 import os
 import matplotlib.pyplot as plt
 from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.layers import Dense, Input, BatchNormalization
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 # ====================== 配置参数 ======================
@@ -41,7 +42,7 @@ MODEL_PARAMS = {
 
 # 训练配置
 TRAIN_PARAMS = {
-    'epochs': 30,               # 训练轮数
+    'epochs': 30,            # 训练轮数
     'batch_size': 64,           # 批量大小
     'validation_split': 0.2,    # 验证集比例
     'verbose': 1                # 显示详细程度
@@ -102,6 +103,9 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
             kernel_initializer=initializer,
             name=f"hidden_layer_{i+1}"
         )(x)
+    
+    # 在输出层前添加BatchNormalization
+    x = BatchNormalization(name="output_bn_layer")(x)
     
     # 输出层
     outputs = tf.keras.layers.Dense(
