@@ -193,22 +193,99 @@ def train_model(model, X_train, y_train, validation_data=None, params=None):
         verbose=0
     )
     
-    # 设置TensorBoard回调 - 使用简化版本避免文件访问错误
-    log_dir = os.path.join(LOGS_DIR, datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+    # 设置TensorBoard回调 - 增强版本以监控更多信息
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = os.path.join(LOGS_DIR, current_time)
     
     # 确保日志目录存在且有读写权限
     os.makedirs(log_dir, exist_ok=True)
     
-    # 使用基本配置，避免高级功能可能导致的文件访问错误
+    # 创建用于记录额外指标的文件写入器
+    file_writer = tf.summary.create_file_writer(os.path.join(log_dir, 'metrics'))
+    file_writer.set_as_default()
+    
+    # 定义学习率调度回调函数 - 用于记录学习率变化
+    class LRTensorBoard(tf.keras.callbacks.Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            # 安全获取学习率，兼容不同版本的TensorFlow
+            try:
+                # 尝试从日志中获取学习率（最安全的方法）
+                if logs and 'lr' in logs:
+                    lr = logs['lr']
+                # 或者尝试直接从优化器获取
+                elif hasattr(self.model.optimizer, '_decayed_lr'):
+                    # TensorFlow 2.x 某些版本
+                    lr = float(self.model.optimizer._decayed_lr(tf.float32).numpy())
+                elif hasattr(self.model.optimizer, 'lr'):
+                    # 尝试各种可能的访问方式
+                    if callable(self.model.optimizer.lr):
+                        lr = float(self.model.optimizer.lr().numpy())
+                    elif hasattr(self.model.optimizer.lr, 'numpy'):
+                        lr = float(self.model.optimizer.lr.numpy())
+                    else:
+                        lr = float(tf.keras.backend.get_value(self.model.optimizer.lr))
+                else:
+                    # 如果无法获取，使用默认值
+                    lr = 0.001
+                    
+                # 记录学习率
+                tf.summary.scalar('learning_rate', data=lr, step=epoch)
+            except Exception as e:
+                # 如果获取学习率失败，记录错误但不中断训练
+                print(f"无法记录学习率: {e}")
+    
+    # 使用增强的TensorBoard配置
     tensorboard_callback = TensorBoard(
         log_dir=log_dir,
         histogram_freq=1,         # 每个周期都计算直方图
-        write_graph=False,        # 不写入计算图
-        update_freq='epoch'       # 每个周期更新一次
+        write_graph=True,         # 写入计算图以便可视化模型结构
+        write_images=True,        # 将权重视为图像写入
+        update_freq='epoch',      # 每个周期更新一次
+        profile_batch=0,          # 禁用分析以避免内存问题
+        embeddings_freq=1,        # 嵌入可视化频率
+        embeddings_metadata=None  # 不指定元数据文件
     )
+    
+    # 创建模型预测可视化回调 - 用于记录预测分布变化
+    class PredictionVisualizer(tf.keras.callbacks.Callback):
+        def __init__(self, validation_data, log_dir):
+            super().__init__()
+            self.validation_data = validation_data
+            self.file_writer = tf.summary.create_file_writer(os.path.join(log_dir, 'prediction_dist'))
+            
+        def on_epoch_end(self, epoch, logs=None):
+            x_val, y_val = self.validation_data
+            y_pred = self.model.predict(x_val)
+            
+            with self.file_writer.as_default():
+                # 记录预测分布
+                tf.summary.histogram('predictions', y_pred, step=epoch)
+                tf.summary.histogram('ground_truth', y_val, step=epoch)
+                
+                # 计算并记录指标
+                mse = mean_squared_error(y_val, y_pred)
+                mae = mean_absolute_error(y_val, y_pred)
+                r2 = r2_score(y_val, y_pred)
+                
+                tf.summary.scalar('val_r2_score', r2, step=epoch)
+                tf.summary.scalar('val_mse_detailed', mse, step=epoch)
+                tf.summary.scalar('val_mae_detailed', mae, step=epoch)
     
     print(f"TensorBoard 日志目录: {log_dir}")
     print("启动TensorBoard: tensorboard --logdir=logs/fit")
+    print("可视化更多指标: 在TensorBoard界面中切换到'SCALARS'、'HISTOGRAMS'、'GRAPHS'等选项卡")
+    
+    # 初始化回调列表
+    callbacks = [
+        checkpoint, 
+        tensorboard_callback,
+        LRTensorBoard()
+    ]
+    
+    # 如果有验证数据，添加预测可视化回调
+    if validation_data is not None:
+        prediction_visualizer = PredictionVisualizer(validation_data, log_dir)
+        callbacks.append(prediction_visualizer)
     
     # 训练模型
     history = model.fit(
@@ -218,7 +295,7 @@ def train_model(model, X_train, y_train, validation_data=None, params=None):
         validation_data=validation_data,
         shuffle=True,
         verbose=params['verbose'],
-        callbacks=[checkpoint, tensorboard_callback]
+        callbacks=callbacks
     )
     
     # 加载最佳模型
