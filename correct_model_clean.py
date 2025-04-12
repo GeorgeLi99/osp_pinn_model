@@ -32,9 +32,9 @@ MODEL_PARAMS = {
         9, 8, 7, 6, 5,          # 中间5层
         4, 4, 4, 4, 4           # 后5层
     ],  
-    'hidden_activation': 'relu',# 所有隐藏层使用ReLU激活函数
-    'output_activation': 'tanh',# 输出层激活函数
-    'initializer': 'he_normal', # 权重初始化方法
+    'hidden_activation': 'tanh', # 所有隐藏层使用tanh激活函数
+    'output_activation': 'tanh', # 输出层激活函数
+    'initializer': 'glorot_normal', # 改为Xavier/Glorot初始化，更适合tanh
     'loss': 'mse',              # 损失函数 (均方误差)
     'metrics': ['mae'],         # 评估指标 (平均绝对误差)
     'optimizer': 'adam'         # 优化器
@@ -88,43 +88,46 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
     # 获取初始化器
     if params['initializer'] == 'he_normal':
         initializer = tf.keras.initializers.he_normal()
+    elif params['initializer'] == 'glorot_normal':
+        initializer = tf.keras.initializers.GlorotNormal()
     else:
         initializer = params['initializer']
     
     # 定义输入层
     inputs = tf.keras.layers.Input(shape=input_shape, name="input_layer")
     
-    # 构建隐藏层
+    # 构建隐藏层 - 每层都添加BatchNormalization
     x = inputs
     for i, units in enumerate(hidden_layers):
+        # 线性变换（无激活函数）
         x = tf.keras.layers.Dense(
             units,
-            activation=hidden_activation,
+            activation=None,  # 移除激活函数，分离出来
             kernel_initializer=initializer,
             name=f"hidden_layer_{i+1}"
         )(x)
+        
+        # 添加BatchNormalization层
+        x = BatchNormalization(
+            name=f"bn_layer_{i+1}",
+            momentum=0.5,           # 降低移动平均动量
+            epsilon=1e-4,          # 调小防止除零的常数
+            center=True,           # 使用beta参数进行偏移
+            scale=True,            # 使用gamma参数进行缩放
+            beta_initializer=tf.keras.initializers.RandomNormal(mean=0.1, stddev=0.05),  # 与权重初始化保持一致
+            gamma_initializer=tf.keras.initializers.RandomNormal(mean=1.0, stddev=0.1)   # 保持原始幅度
+        )(x)
+        
+        # 激活函数层
+        x = tf.keras.layers.Activation(hidden_activation, name=f"activation_{i+1}")(x)
     
-    # 输出层 - 分离线性变换、批归一化和激活函数
-    x = tf.keras.layers.Dense(
+    # 输出层 - 直接带激活函数，没有BN层
+    outputs = tf.keras.layers.Dense(
         output_units, 
-        activation=None,  # 移除激活函数
+        activation=output_activation,  # 直接使用激活函数
         kernel_initializer=initializer,
         name="output_layer"
     )(x)
-    
-    # 在输出层和激活函数之间添加BatchNormalization，并调整参数以防止输出定值
-    x = BatchNormalization(
-        name="output_bn_layer",
-        momentum=0.5,           # 降低移动平均动量，使得批的影响更大
-        epsilon=1e-4,          # 调小防止除零的常数
-        center=True,           # 使用beta参数进行偏移
-        scale=True,            # 使用gamma参数进行缩放
-        beta_initializer=tf.keras.initializers.RandomNormal(mean=0.5, stddev=0.1),  # 初始化beta为正值，避免归一化过度
-        gamma_initializer=tf.keras.initializers.RandomNormal(mean=1.0, stddev=0.1)   # 初始化gamma为正值，保持原始幅度
-    )(x)
-    
-    # 激活函数层
-    outputs = tf.keras.layers.Activation(output_activation, name="output_activation")(x)
     
     # 创建模型
     model = tf.keras.Model(inputs=inputs, outputs=outputs, name="Neural_Network_Model")
