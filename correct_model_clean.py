@@ -42,7 +42,7 @@ MODEL_PARAMS = {
 
 # 训练配置
 TRAIN_PARAMS = {
-    'epochs': 30,            # 训练轮数
+    'epochs': 25,            # 训练轮数
     'batch_size': 64,           # 批量大小
     'validation_split': 0.2,    # 验证集比例
     'verbose': 1                # 显示详细程度
@@ -104,16 +104,27 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
             name=f"hidden_layer_{i+1}"
         )(x)
     
-    # 在输出层前添加BatchNormalization
-    x = BatchNormalization(name="output_bn_layer")(x)
-    
-    # 输出层
-    outputs = tf.keras.layers.Dense(
+    # 输出层 - 分离线性变换、批归一化和激活函数
+    x = tf.keras.layers.Dense(
         output_units, 
-        activation=output_activation,
+        activation=None,  # 移除激活函数
         kernel_initializer=initializer,
         name="output_layer"
     )(x)
+    
+    # 在输出层和激活函数之间添加BatchNormalization，并调整参数以防止输出定值
+    x = BatchNormalization(
+        name="output_bn_layer",
+        momentum=0.5,           # 降低移动平均动量，使得批的影响更大
+        epsilon=1e-4,          # 调小防止除零的常数
+        center=True,           # 使用beta参数进行偏移
+        scale=True,            # 使用gamma参数进行缩放
+        beta_initializer=tf.keras.initializers.RandomNormal(mean=0.5, stddev=0.1),  # 初始化beta为正值，避免归一化过度
+        gamma_initializer=tf.keras.initializers.RandomNormal(mean=1.0, stddev=0.1)   # 初始化gamma为正值，保持原始幅度
+    )(x)
+    
+    # 激活函数层
+    outputs = tf.keras.layers.Activation(output_activation, name="output_activation")(x)
     
     # 创建模型
     model = tf.keras.Model(inputs=inputs, outputs=outputs, name="Neural_Network_Model")
