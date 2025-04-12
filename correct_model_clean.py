@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import datetime
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, ReduceLROnPlateau
 from tensorflow.keras.layers import Dense, Input, BatchNormalization
+from tensorflow.keras.losses import Huber
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 # 导入模型可视化模块
@@ -37,11 +38,11 @@ MODEL_PARAMS = {
         9, 8, 7, 6, 5,          # 中间5层
         4, 4, 4, 4, 4           # 后5层
     ],  
-    'hidden_activation': tf.keras.layers.ELU(alpha=1.3), # 自定义ELU激活函数，alpha=1.3更适合深度网络
+    'hidden_activation': 'elu',   # 使用Keras内置的ELU激活函数
     'output_activation': 'linear', # 输出层使用线性激活函数
     'initializer': 'he_normal', # 权重初始化方法，适合ELU
-    'loss': 'mse',              # 损失函数 (均方误差)
-    'metrics': ['mae'],         # 评估指标 (平均绝对误差)
+    'loss': 'huber',            # 损失函数 (Huber损失，对异常值更强健)
+    'metrics': ['mae', 'mse'],  # 评估指标 (平均绝对误差和均方误差)
     'optimizer': 'adam'         # 优化器
 }
 
@@ -91,9 +92,6 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
     hidden_activation = params['hidden_activation']
     output_activation = params['output_activation']
     
-    # 检查激活函数类型
-    is_custom_activation = isinstance(hidden_activation, tf.keras.layers.Layer)
-    
     # 获取初始化器
     if params['initializer'] == 'he_normal':
         initializer = tf.keras.initializers.he_normal()
@@ -105,28 +103,16 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
     # 定义输入层
     inputs = tf.keras.layers.Input(shape=input_shape, name="input_layer")
     
-    # 构建隐藏层 - 使用自定义ELU激活函数
+    # 构建隐藏层 - 使用Keras内置的ELU激活函数
     x = inputs
     for i, units in enumerate(hidden_layers):
-        # 根据激活函数类型处理
-        if is_custom_activation:
-            # 如果是自定义激活函数对象，先只用线性变换
-            x = tf.keras.layers.Dense(
-                units,
-                activation=None,  # 不使用激活函数
-                kernel_initializer=initializer,
-                name=f"hidden_layer_{i+1}"
-            )(x)
-            # 然后单独应用激活函数
-            x = hidden_activation(x)
-        else:
-            # 如果是字符串激活函数，直接在Dense层中使用
-            x = tf.keras.layers.Dense(
-                units,
-                activation=hidden_activation,
-                kernel_initializer=initializer,
-                name=f"hidden_layer_{i+1}"
-            )(x)
+        # 直接使用字符串指定激活函数
+        x = tf.keras.layers.Dense(
+            units,
+            activation=hidden_activation,
+            kernel_initializer=initializer,
+            name=f"hidden_layer_{i+1}"
+        )(x)
     
     # 输出层 - 使用线性激活函数
     outputs = tf.keras.layers.Dense(
@@ -140,11 +126,21 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
     model = tf.keras.Model(inputs=inputs, outputs=outputs, name="Neural_Network_Model")
     
     # 编译模型
-    model.compile(
-        optimizer=params['optimizer'],
-        loss=params['loss'],
-        metrics=params['metrics']
-    )
+    if params['loss'] == 'huber':
+        # 使用Keras内置的Huber损失函数，并设置delta=1.0
+        huber_loss = Huber(delta=1.0)
+        model.compile(
+            optimizer=params['optimizer'],
+            loss=huber_loss,
+            metrics=params['metrics']
+        )
+    else:
+        # 使用其他损失函数
+        model.compile(
+            optimizer=params['optimizer'],
+            loss=params['loss'],
+            metrics=params['metrics']
+        )
     
     return model
 
