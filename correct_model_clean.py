@@ -20,8 +20,8 @@ from model_visualizer import visualize_model_structure
 
 # ====================== 配置参数 ======================
 # 路径配置
-DEFAULT_DATA_PATH = r'C:\0_code\new_osp\data\train_data.csv'
-TEST_DATA_PATH = r'C:\0_code\new_osp\data\test_data.csv'
+DEFAULT_DATA_PATH = r'C:\0_code\new_osp\data\triple_film_sweep_with_n_results_1.csv'
+TEST_DATA_PATH = r'C:\0_code\new_osp\data\triple_film_sweep_with_n_results.csv'
 MODEL_SAVE_DIR = 'models'
 RESULTS_SAVE_DIR = 'results'
 LOGS_DIR = os.path.join('logs', 'fit')
@@ -86,7 +86,7 @@ LR_SCHEDULER_PARAMS = {
     'factor': 0.2,              # 学习率降低倍数（降低到原来的0.2倍）
     'patience': 10,              # 10个epoch没有改善就降低学习率
     'min_lr': 1e-6,             # 学习率下限
-    'cooldown': 1,              # 冷却期
+    'cooldown': 2,              # 冷却期
     'verbose': 1                # 显示详细信息
 }
 
