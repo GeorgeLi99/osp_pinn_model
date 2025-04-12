@@ -31,14 +31,34 @@ MODEL_FILENAME = 'simple_linear_model.h5'
 MODEL_PARAMS = {
     'input_shape': (6,),        # 输入特征维度
     'output_units': 1,          # 输出维度
-    # 25层神经网络，每层神经元数量逐渐递减
+    # 50层深度神经网络，采用网络瓶颈结构设计
     'hidden_layers': [
-        32, 30, 28, 26, 24,     # 前5层
-        22, 20, 18, 16, 15,     # 中间5层
-        14, 13, 12, 11, 10,     # 中间5层
-        9, 8, 7, 6, 5,          # 中间5层
-        4, 4, 4, 4, 4           # 后5层
-    ],  
+        # 引入阶段 - 逐渐缩小，捕捉各种特征
+        128, 112, 98, 86, 76,   # 1-5层，高维度特征提取
+        
+        # 瓶颈压缩阶段 - 快速缩小到瓶颈
+        64, 56, 48, 40, 32,     # 6-10层，特征综合
+        28, 24, 20, 18, 16,     # 11-15层，特征压缩
+        14, 12, 10, 8,  7,      # 16-20层，进一步压缩
+        
+        # 瓶颈区 - 维持低维度特征提取
+        6, 6, 6, 6, 6,          # 21-25层，核心特征提取
+        6, 6, 6, 6, 6,          # 26-30层，高效信息处理
+        
+        # 扩展阶段 - 逐渐扩大接收域
+        7, 8, 10, 12, 14,      # 31-35层，特征扩展
+        16, 18, 20, 22, 24,     # 36-40层，扩展信息处理
+        
+        # 推理阶段 - 收缩到适合输出的大小
+        20, 16, 12, 8, 6,       # 41-45层，逐渐聚焦到目标
+        5, 4, 3, 2, 2           # 46-50层，精细化输出
+    ],
+    
+    # 采用残差连接和层正规化来增强训练稳定性
+    'use_residual': True,      # 启用残差连接，防止梯度消失
+    'use_batch_norm': True,    # 使用批正规化，提高训练稳定性
+    'residual_frequency': 5,   # 每5层添加一个残差连接
+    
     'hidden_activation': 'elu',  # 使用Keras内置的ELU激活函数
     'output_activation': 'linear', # 输出层使用线性激活函数
     'initializer': 'he_normal',  # 权重初始化方法，适合ELU
@@ -54,8 +74,8 @@ LOSS_PARAMS = {
 
 # 训练配置
 TRAIN_PARAMS = {
-    'epochs': 5,               # 训练轮数
-    'batch_size': 32,           # 批量大小
+    'epochs': 100,              # 训练轮数增加以适应更复杂的模型
+    'batch_size': 64,           # 增大批量大小以加速训练
     'validation_split': 0.2,    # 验证集比例
     'verbose': 2                # 显示详细程度 (每个epoch一行)
 }
@@ -127,6 +147,9 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
     hidden_layers = params['hidden_layers']
     hidden_activation = params['hidden_activation']
     output_activation = params['output_activation']
+    use_residual = params.get('use_residual', False)  # 默认不使用残差连接
+    use_batch_norm = params.get('use_batch_norm', False)  # 默认不使用批正规化
+    residual_frequency = params.get('residual_frequency', 5)  # 每5层添加一个残差连接
     
     # 获取初始化器
     if params['initializer'] == 'he_normal':
@@ -139,16 +162,59 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
     # 定义输入层
     inputs = tf.keras.layers.Input(shape=input_shape, name="input_layer")
     
-    # 构建隐藏层 - 使用Keras内置的ELU激活函数
+    # 构建隐藏层 - 深度网络带残差连接
     x = inputs
+    residual_start = x  # 初始残差连接的起点
+    residual_units = None  # 记录残差连接起点的神经元数量
+    
     for i, units in enumerate(hidden_layers):
-        # 直接使用字符串指定激活函数
+        # 当前层序号，从1开始
+        layer_idx = i + 1
+        
+        # 如果使用批正规化，先应用批正规化
+        if use_batch_norm:
+            x = tf.keras.layers.BatchNormalization(name=f"batch_norm_{layer_idx}")(x)
+        
+        # 创建当前隐藏层
         x = tf.keras.layers.Dense(
             units,
             activation=hidden_activation,
             kernel_initializer=initializer,
-            name=f"hidden_layer_{i+1}"
+            name=f"hidden_layer_{layer_idx}"
         )(x)
+        
+        # 处理残差连接
+        if use_residual:
+            # 记录第一个层的神经元数量，用于残差连接的投影
+            if i == 0:
+                residual_units = units
+                residual_start = x
+            
+            # 每 residual_frequency 层添加一个残差连接
+            if (i > 0) and ((i+1) % residual_frequency == 0):
+                # 需要调整维度以匹配当前层
+                if residual_units != units:
+                    # 创建投影映射将上一个残差层的维度调整为当前层
+                    projected_residual = tf.keras.layers.Dense(
+                        units, 
+                        activation=None,
+                        kernel_initializer=initializer,
+                        name=f"residual_proj_{layer_idx}"
+                    )(residual_start)
+                    
+                    # 添加残差连接
+                    x = tf.keras.layers.add([x, projected_residual], name=f"residual_add_{layer_idx}")
+                else:
+                    # 维度相同，直接添加
+                    x = tf.keras.layers.add([x, residual_start], name=f"residual_add_{layer_idx}")
+                
+                # 更新当前残差连接起点
+                residual_start = x
+                residual_units = units
+    
+    # 如果使用批正规化，在输出层前最后应用一次
+    if use_batch_norm:
+        x = tf.keras.layers.BatchNormalization(name="final_batch_norm")(x)
     
     # 输出层 - 使用线性激活函数
     outputs = tf.keras.layers.Dense(
