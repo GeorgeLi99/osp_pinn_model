@@ -196,6 +196,7 @@ def train_model(model, X_train, y_train, validation_data=None, params=None):
         epochs=params['epochs'],
         batch_size=params['batch_size'],
         validation_data=validation_data,
+        shuffle=True,
         verbose=params['verbose'],
         callbacks=[checkpoint]
     )
