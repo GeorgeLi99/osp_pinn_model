@@ -32,9 +32,9 @@ MODEL_PARAMS = {
         9, 8, 7, 6, 5,          # 中间5层
         4, 4, 4, 4, 4           # 后5层
     ],  
-    'hidden_activation': 'tanh', # 所有隐藏层使用tanh激活函数
-    'output_activation': 'tanh', # 输出层激活函数
-    'initializer': 'glorot_normal', # 改为Xavier/Glorot初始化，更适合tanh
+    'hidden_activation': 'relu', # 所有隐藏层使用ReLU激活函数
+    'output_activation': 'linear', # 输出层使用线性激活函数
+    'initializer': 'he_normal', # 权重初始化方法，适合ReLU
     'loss': 'mse',              # 损失函数 (均方误差)
     'metrics': ['mae'],         # 评估指标 (平均绝对误差)
     'optimizer': 'adam'         # 优化器
@@ -42,7 +42,7 @@ MODEL_PARAMS = {
 
 # 训练配置
 TRAIN_PARAMS = {
-    'epochs': 25,            # 训练轮数
+    'epochs': 50,            # 训练轮数
     'batch_size': 64,           # 批量大小
     'validation_split': 0.2,    # 验证集比例
     'verbose': 1                # 显示详细程度
@@ -96,35 +96,20 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
     # 定义输入层
     inputs = tf.keras.layers.Input(shape=input_shape, name="input_layer")
     
-    # 构建隐藏层 - 每层都添加BatchNormalization
+    # 构建隐藏层 - 直接使用ReLU激活函数，移除了BN层
     x = inputs
     for i, units in enumerate(hidden_layers):
-        # 线性变换（无激活函数）
         x = tf.keras.layers.Dense(
             units,
-            activation=None,  # 移除激活函数，分离出来
+            activation=hidden_activation,  # 直接使用ReLU激活函数
             kernel_initializer=initializer,
             name=f"hidden_layer_{i+1}"
         )(x)
-        
-        # 添加BatchNormalization层
-        x = BatchNormalization(
-            name=f"bn_layer_{i+1}",
-            momentum=0.5,           # 降低移动平均动量
-            epsilon=1e-4,          # 调小防止除零的常数
-            center=True,           # 使用beta参数进行偏移
-            scale=True,            # 使用gamma参数进行缩放
-            beta_initializer=tf.keras.initializers.RandomNormal(mean=0.1, stddev=0.05),  # 与权重初始化保持一致
-            gamma_initializer=tf.keras.initializers.RandomNormal(mean=1.0, stddev=0.1)   # 保持原始幅度
-        )(x)
-        
-        # 激活函数层
-        x = tf.keras.layers.Activation(hidden_activation, name=f"activation_{i+1}")(x)
     
-    # 输出层 - 直接带激活函数，没有BN层
+    # 输出层 - 使用线性激活函数
     outputs = tf.keras.layers.Dense(
         output_units, 
-        activation=output_activation,  # 直接使用激活函数
+        activation=output_activation,  # 使用线性激活函数
         kernel_initializer=initializer,
         name="output_layer"
     )(x)
