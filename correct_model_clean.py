@@ -21,12 +21,13 @@ from model_visualizer import visualize_model_structure
 # ====================== 配置参数 ======================
 # 路径配置
 DEFAULT_DATA_PATH = r'C:\0_code\new_osp\data\train_data.csv'
+TEST_DATA_PATH = r'C:\0_code\new_osp\data\test_data.csv'
 MODEL_SAVE_DIR = 'models'
 RESULTS_SAVE_DIR = 'results'
 LOGS_DIR = os.path.join('logs', 'fit')
 MODEL_FILENAME = 'simple_linear_model.h5'
 
-# 模型配置
+# 模型结构配置
 MODEL_PARAMS = {
     'input_shape': (6,),        # 输入特征维度
     'output_units': 1,          # 输出维度
@@ -38,27 +39,62 @@ MODEL_PARAMS = {
         9, 8, 7, 6, 5,          # 中间5层
         4, 4, 4, 4, 4           # 后5层
     ],  
-    'hidden_activation': 'elu',   # 使用Keras内置的ELU激活函数
+    'hidden_activation': 'elu',  # 使用Keras内置的ELU激活函数
     'output_activation': 'linear', # 输出层使用线性激活函数
-    'initializer': 'he_normal', # 权重初始化方法，适合ELU
-    'loss': 'huber',            # 损失函数 (Huber损失，对异常值更强健)
-    'metrics': ['mae', 'mse'],  # 评估指标 (平均绝对误差和均方误差)
-    'optimizer': 'adam'         # 优化器
+    'initializer': 'he_normal',  # 权重初始化方法，适合ELU
+    'metrics': ['mae', 'mse'],   # 评估指标 (平均绝对误差和均方误差)
+    'optimizer': 'adam'          # 优化器
+}
+
+# 损失函数配置
+LOSS_PARAMS = {
+    'function': 'huber',         # 使用Huber损失函数
+    'delta': 1.0                # Huber损失函数的delta参数，调整MSE和MAE之间的平衡
 }
 
 # 训练配置
 TRAIN_PARAMS = {
-    'epochs': 60,            # 训练轮数
+    'epochs': 5,               # 训练轮数
     'batch_size': 32,           # 批量大小
     'validation_split': 0.2,    # 验证集比例
     'verbose': 2                # 显示详细程度 (每个epoch一行)
 }
 
+# 学习率调度器配置
+LR_SCHEDULER_PARAMS = {
+    'monitor': 'val_loss',       # 监控验证集上的损失
+    'factor': 0.2,              # 学习率降低倍数（降低到原来的0.2倍）
+    'patience': 5,              # 5个epoch没有改善就降低学习率
+    'min_lr': 1e-6,             # 学习率下限
+    'cooldown': 0,              # 冷却期
+    'verbose': 1                # 显示详细信息
+}
+
+# TensorBoard配置
+TENSORBOARD_PARAMS = {
+    'histogram_freq': 1,         # 每个周期都计算直方图
+    'write_graph': True,        # 写入计算图以便可视化模型结构
+    'write_images': True,       # 将权重视为图像写入
+    'update_freq': 'epoch',     # 每个周期更新一次
+    'profile_batch': 0,         # 禁用分析以避免内存问题
+    'embeddings_freq': 1,       # 嵌入可视化频率
+    'embeddings_metadata': None # 不指定元数据文件
+}
+
+# 模型检查点配置
+CHECKPOINT_PARAMS = {
+    'monitor': 'val_loss',       # 监控验证集上的损失
+    'save_best_only': True,     # 只保存最佳模型
+    'mode': 'min',              # 监控指标越小越好
+    'verbose': 0                # 不显示详细信息
+}
+
 # 可视化配置
 VISUALIZATION_PARAMS = {
     'scatter_figsize': (10, 6),  # 散点图大小
-    'hist_figsize': (10, 6),     # 直方图大小
-    'hist_bins': 30,             # 直方图柱数
+    'hist_figsize': (10, 6),    # 直方图大小
+    'hist_bins': 30,            # 直方图柱数
+    'dpi': 300                  # 图像分辨率
 }
 
 # 创建必要的目录
@@ -125,10 +161,10 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
     # 创建模型
     model = tf.keras.Model(inputs=inputs, outputs=outputs, name="Neural_Network_Model")
     
-    # 编译模型
-    if params['loss'] == 'huber':
-        # 使用Keras内置的Huber损失函数，并设置delta=1.0
-        huber_loss = Huber(delta=1.0)
+    # 根据配置使用相应的损失函数
+    if LOSS_PARAMS['function'] == 'huber':
+        # 使用Keras内置的Huber损失函数
+        huber_loss = Huber(delta=LOSS_PARAMS['delta'])
         model.compile(
             optimizer=params['optimizer'],
             loss=huber_loss,
@@ -138,7 +174,7 @@ def create_simple_model(input_shape=None, output_units=None, params=None):
         # 使用其他损失函数
         model.compile(
             optimizer=params['optimizer'],
-            loss=params['loss'],
+            loss=LOSS_PARAMS['function'],
             metrics=params['metrics']
         )
     
@@ -183,10 +219,10 @@ def train_model(model, X_train, y_train, validation_data=None, params=None):
     checkpoint_path = os.path.join(MODEL_SAVE_DIR, 'checkpoint_best_model.h5')
     checkpoint = ModelCheckpoint(
         checkpoint_path, 
-        monitor='val_loss', 
-        save_best_only=True, 
-        mode='min', 
-        verbose=0
+        monitor=CHECKPOINT_PARAMS['monitor'], 
+        save_best_only=CHECKPOINT_PARAMS['save_best_only'], 
+        mode=CHECKPOINT_PARAMS['mode'], 
+        verbose=CHECKPOINT_PARAMS['verbose']
     )
     
     # 设置TensorBoard回调 - 增强版本以监控更多信息
@@ -233,13 +269,13 @@ def train_model(model, X_train, y_train, validation_data=None, params=None):
     # 使用增强的TensorBoard配置
     tensorboard_callback = TensorBoard(
         log_dir=log_dir,
-        histogram_freq=1,         # 每个周期都计算直方图
-        write_graph=True,         # 写入计算图以便可视化模型结构
-        write_images=True,        # 将权重视为图像写入
-        update_freq='epoch',      # 每个周期更新一次
-        profile_batch=0,          # 禁用分析以避免内存问题
-        embeddings_freq=1,        # 嵌入可视化频率
-        embeddings_metadata=None  # 不指定元数据文件
+        histogram_freq=TENSORBOARD_PARAMS['histogram_freq'],
+        write_graph=TENSORBOARD_PARAMS['write_graph'],
+        write_images=TENSORBOARD_PARAMS['write_images'],
+        update_freq=TENSORBOARD_PARAMS['update_freq'],
+        profile_batch=TENSORBOARD_PARAMS['profile_batch'],
+        embeddings_freq=TENSORBOARD_PARAMS['embeddings_freq'],
+        embeddings_metadata=TENSORBOARD_PARAMS['embeddings_metadata']
     )
     
     # 创建模型预测可视化回调 - 用于记录预测分布变化
@@ -273,12 +309,12 @@ def train_model(model, X_train, y_train, validation_data=None, params=None):
     
     # 创建学习率调度器 - 当验证指标停止改善时自动降低学习率
     reduce_lr = ReduceLROnPlateau(
-        monitor='val_loss',       # 监控验证集上的损失
-        factor=0.2,              # 学习率降低倍数（即降低到原来的0.2倍）
-        patience=5,              # 5个epoch没有改善就降低学习率
-        min_lr=1e-6,             # 学习率下限
-        cooldown=0,              # 冷却期，在这个周期内不会再降低学习率
-        verbose=1                # 显示降低学习率的消息
+        monitor=LR_SCHEDULER_PARAMS['monitor'],
+        factor=LR_SCHEDULER_PARAMS['factor'],
+        patience=LR_SCHEDULER_PARAMS['patience'],
+        min_lr=LR_SCHEDULER_PARAMS['min_lr'],
+        cooldown=LR_SCHEDULER_PARAMS['cooldown'],
+        verbose=LR_SCHEDULER_PARAMS['verbose']
     )
     
     # 初始化回调列表
@@ -392,7 +428,7 @@ def plot_training_history(history):
     
     # 保存详细视图图表
     loss_plot_path = os.path.join(RESULTS_SAVE_DIR, 'loss_history.png')
-    plt.savefig(loss_plot_path, dpi=300)
+    plt.savefig(loss_plot_path, dpi=VISUALIZATION_PARAMS['dpi'])
     plt.close()
     
     # --------- 第二幅图: 增加对数尺度图 ---------
@@ -408,7 +444,7 @@ def plot_training_history(history):
     
     # 保存对数尺度图表
     log_loss_plot_path = os.path.join(RESULTS_SAVE_DIR, 'loss_history_log_scale.png')
-    plt.savefig(log_loss_plot_path, dpi=300)
+    plt.savefig(log_loss_plot_path, dpi=VISUALIZATION_PARAMS['dpi'])
     plt.close()
     
     print(f"\nLoss history plots saved to: \n1. {loss_plot_path} \n2. {log_loss_plot_path}")
@@ -595,7 +631,7 @@ def main(data_path=None):
     # 预测并可视化独立测试集结果
     print("\n" + "-"*40)
     print("Evaluating on External Test Set:")
-    test_data = pd.read_csv(r"C:\0_code\new_osp\data\test_data.csv")
+    test_data = pd.read_csv(TEST_DATA_PATH)
     X_test_data = test_data.iloc[:, :-1].values
     y_test_data = test_data.iloc[:, -1].values
     predict_and_visualize(model, X_test_data, y_test_data, set_name="Test")
