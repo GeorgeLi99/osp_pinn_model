@@ -88,22 +88,50 @@ function t_ij = calculate_transmission_coefficient(n_i, theta_i, n_j, theta_j)
     t_ij = 2 * n_i * cos_theta_i / (n_i * cos_theta_i + n_j * cos_theta_j);
 end
 
-% 定义参数范围和步长（示例简化版）
-n_values = 1:0.1:2;       % 折射率从1到2，步长0.5（示例简化）
-d_values = 50:10:200;     % 厚度从50nm到200nm，步长50nm（示例简化）
-theta_deg = 0:10:90;      % 入射角从0°到90°，步长30°（示例简化）
+% 设置随机种子以确保可重现性
+rng(42);
 
-% 生成参数网格
+% 方法1: 降低参数分辨率，为了控制在大约50,000个样本
+% 折射率: 从1到2，步长更大
+% 厚度: 从50nm到200nm，步长更大
+% 入射角: 保持相同范围但降低采样点
+
+n_values = 1:0.25:2;      % 折射率: 1, 1.25, 1.5, 1.75, 2 (共在5个值)
+d_values = 50:25:200;     % 厚度: 50, 75, 100, 125, 150, 175, 200 (共7个值)
+theta_deg = [0, 15, 30, 45, 60, 75, 90]; % 入射角采样点(共7个值)
+
+% 生成参数网格 - 这将创建以下数量的样本:
+% 5^3 * 7^3 * 7 = 125 * 343 * 7 = 300,125个样本
 [n1_grid, n2_grid, n3_grid, d1_grid, d2_grid, d3_grid, theta_grid] = ndgrid(...
     n_values, n_values, n_values, d_values, d_values, d_values, theta_deg);
 
 % 转换为列向量以便遍历
-params = [n1_grid(:), n2_grid(:), n3_grid(:), ...
+full_params = [n1_grid(:), n2_grid(:), n3_grid(:), ...
           d1_grid(:), d2_grid(:), d3_grid(:), theta_grid(:)];
+
+% 随机挑选约50,000个样本
+num_samples = 50000;
+total_generated = size(full_params, 1);
+if total_generated > num_samples
+    % 随机挑选指定数量的样本
+    sample_indices = randperm(total_generated, num_samples);
+    params = full_params(sample_indices, :);
+    
+    fprintf('\n\n从总共 %d 个样本中随机挑选了 %d 个样本\n\n', ...
+        total_generated, num_samples);
+else
+    params = full_params;
+    fprintf('\n\n生成了全部 %d 个样本\n\n', total_generated);
+end
 
 % 预分配结果数组
 num_rows = size(params, 1);
 results = zeros(num_rows, 8);  % 8列: theta, n1, n2, n3, d1, d2, d3, R
+
+fprintf('\n开始计算 %d 个数据点...\n', num_rows);
+
+% 使用进度条来显示计算进度
+progress_interval = max(1, floor(num_rows/100));
 
 % 并行计算（需要Parallel Computing Toolbox）
 parfor i = 1:num_rows
@@ -131,13 +159,26 @@ parfor i = 1:num_rows
     results(i, :) = [params(i, 7), n1, n2, n3, ...
                      params(i, 4), params(i, 5), params(i, 6), R];
     
-    % 实时输出每组计算得到的参数
-    fprintf('第 %d 组计算结果：入射角 %.2f 度，n1 = %.2f，n2 = %.2f，n3 = %.2f，d1 = %.2f nm，d2 = %.2f nm，d3 = %.2f nm，反射率 R = %.6f\n', ...
-            i, params(i, 7), n1, n2, n3, params(i, 4), params(i, 5), params(i, 6), R);
+    % 每计算一定数量的样本显示进度
+    if mod(i, progress_interval) == 0
+        fprintf('\r计算进度: %.1f%% (%d/%d)', 100*i/num_rows, i, num_rows);
+    end
 end
 
+% 清除最后的进度条并显示统计信息
+fprintf('\n\n计算完成! 生成了 %d 个数据点\n', num_rows);
+
+% 显示反射率的基本统计信息
+valid_reflectance = results(:, 8);
+valid_reflectance = valid_reflectance(~isnan(valid_reflectance));
+fprintf('\n反射率统计信息:\n');
+fprintf('  最小值: %.6f\n', min(valid_reflectance));
+fprintf('  最大值: %.6f\n', max(valid_reflectance));
+fprintf('  平均值: %.6f\n', mean(valid_reflectance));
+fprintf('  标准差: %.6f\n\n', std(valid_reflectance));
+
 % 保存为CSV文件（文件名带时间戳以防覆盖）
-filename = sprintf('reflectance_data_%s.csv', datestr(now, 'yyyymmdd_HHMMSS'));
+filename = sprintf('reflectance_data_%s_n%d.csv', datestr(now, 'yyyymmdd_HHMMSS'), num_rows);
 writematrix(results, filename);
 
 % 显示完成提示
